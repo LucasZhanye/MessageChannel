@@ -1,0 +1,10 @@
+test: hello
+
+httpserver:
+  shutdown_delay_time: 3s
+  insecure_address: 172.22.210.186
+  insecure_port: 8080
+transport:
+  websocket:
+    read_buffer_size: 20
+    start_ping: true
