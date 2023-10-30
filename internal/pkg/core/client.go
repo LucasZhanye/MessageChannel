@@ -134,6 +134,9 @@ func (c *Client) handleConnect(req *protocol.Request) error {
 	cid := c.genClientId()
 	c.Identifie = c.setIdentifie(clientName, cid)
 
+	reply = protocol.ReplyPool.GetResponseReply(protocol.OK.WithType(protocol.RESPONSE_CONNECT).WithMetaData(map[string]string{"identifie": c.Identifie}))
+	defer protocol.ReplyPool.ReleaseResponseReply(reply)
+
 	// Add to ClientManager
 	err := c.node.Register(c)
 	if err != nil {
@@ -142,9 +145,6 @@ func (c *Client) handleConnect(req *protocol.Request) error {
 	}
 
 	c.status = CLIENT_STATUS_CONNECTED
-
-	reply = protocol.ReplyPool.GetResponseReply(protocol.OK.WithType(protocol.RESPONSE_CONNECT).WithMetaData(map[string]string{"identifie": c.Identifie}))
-	defer protocol.ReplyPool.ReleaseResponseReply(reply)
 
 	err = c.Send(reply.SetId(req.Id).ToJsonBytes())
 	if err != nil {
@@ -163,6 +163,9 @@ func (c *Client) handleSubscribe(req *protocol.Request) error {
 	subReq := req.Subscribe
 
 	c.node.Log.Debug("subReq = %+v", subReq)
+
+	reply = protocol.ReplyPool.GetResponseReply(protocol.OK.WithType(protocol.RESPONSE_SUBSCRIBE))
+	defer protocol.ReplyPool.ReleaseResponseReply(reply)
 
 	if subReq.Identifie != c.Identifie {
 		reply = protocol.ReplyPool.GetResponseReply(protocol.ErrParam.WithType(protocol.RESPONSE_SUBSCRIBE).WithMessage("client id not match"))
@@ -184,14 +187,40 @@ func (c *Client) handleSubscribe(req *protocol.Request) error {
 		goto Reply
 	}
 
-	reply = protocol.ReplyPool.GetResponseReply(protocol.OK.WithType(protocol.RESPONSE_SUBSCRIBE))
-	defer protocol.ReplyPool.ReleaseResponseReply(reply)
 Reply:
 	return c.Send(reply.SetId(req.Id).ToJsonBytes())
 }
 
 func (c *Client) handleUnsubscribe(req *protocol.Request) error {
-	return nil
+	var reply *protocol.Reply
+	var err error
+	var unsub *protocol.Unsubscription
+
+	unsubReq := req.Unsubscribe
+
+	c.node.Log.Debug("unsubReq = %+v", unsubReq)
+
+	reply = protocol.ReplyPool.GetResponseReply(protocol.OK.WithType(protocol.RESPONSE_UNSUBSCRIBE))
+	defer protocol.ReplyPool.ReleaseResponseReply(reply)
+
+	if unsubReq.Topic == "" {
+		reply = protocol.ReplyPool.GetResponseReply(protocol.ErrParam.WithType(protocol.RESPONSE_UNSUBSCRIBE).WithMessage("topic is nul"))
+		goto Reply
+	}
+	if unsubReq.Group == "" {
+		reply = protocol.ReplyPool.GetResponseReply(protocol.ErrParam.WithType(protocol.RESPONSE_UNSUBSCRIBE).WithMessage("group is nul"))
+		goto Reply
+	}
+
+	unsub = protocol.NewUnSubscription(unsubReq.Topic, unsubReq.Group)
+	err = c.node.UnSubscribe(unsub)
+	if err != nil {
+		reply = protocol.ReplyPool.GetResponseReply(protocol.ErrServer.WithType(protocol.RESPONSE_UNSUBSCRIBE).WithMessage(err.Error()))
+		goto Reply
+	}
+
+Reply:
+	return c.Send(reply.SetId(req.Id).ToJsonBytes())
 }
 
 func (c *Client) handlePublish(req *protocol.Request) error {
@@ -202,6 +231,9 @@ func (c *Client) handlePublish(req *protocol.Request) error {
 	publishReq := req.Publish
 
 	c.node.Log.Debug("publishReq = %+v", publishReq)
+
+	reply = protocol.ReplyPool.GetResponseReply(protocol.OK.WithType(protocol.RESPONSE_PUBLISH))
+	defer protocol.ReplyPool.ReleaseResponseReply(reply)
 
 	if publishReq.Topic == "" || len(publishReq.Data) == 0 {
 		reply = protocol.ReplyPool.GetResponseReply(protocol.ErrParam.WithType(protocol.RESPONSE_PUBLISH).WithMessage("topic or data is nul"))
@@ -220,9 +252,6 @@ func (c *Client) handlePublish(req *protocol.Request) error {
 		goto Reply
 	}
 
-	reply = protocol.ReplyPool.GetResponseReply(protocol.OK.WithType(protocol.RESPONSE_PUBLISH))
-	defer protocol.ReplyPool.ReleaseResponseReply(reply)
-
 Reply:
 	return c.Send(reply.SetId(req.Id).ToJsonBytes())
 }
@@ -239,6 +268,9 @@ func (c *Client) handleAck(req *protocol.Request) error {
 
 	c.node.Log.Debug("ackReq = %+v", ackReq)
 
+	reply = protocol.ReplyPool.GetResponseReply(protocol.OK.WithType(protocol.RESPONSE_ACK))
+	defer protocol.ReplyPool.ReleaseResponseReply(reply)
+
 	if ackReq.MessageId == "" {
 		reply = protocol.ReplyPool.GetResponseReply(protocol.ErrParam.WithType(protocol.RESPONSE_ACK).WithMessage("message id is nul"))
 		goto Reply
@@ -249,9 +281,6 @@ func (c *Client) handleAck(req *protocol.Request) error {
 		reply = protocol.ReplyPool.GetResponseReply(protocol.ErrServer.WithType(protocol.RESPONSE_ACK).WithMessage(err.Error()))
 		goto Reply
 	}
-
-	reply = protocol.ReplyPool.GetResponseReply(protocol.OK.WithType(protocol.RESPONSE_ACK))
-	defer protocol.ReplyPool.ReleaseResponseReply(reply)
 
 Reply:
 	return c.Send(reply.SetId(req.Id).ToJsonBytes())

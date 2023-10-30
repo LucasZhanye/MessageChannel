@@ -28,3 +28,10 @@ func NewSubscription(identifie string, topic string, group string) *Subscription
 		ExitChan:  make(chan struct{}),
 	}
 }
+
+func NewUnSubscription(topic, group string) *Unsubscription {
+	return &Unsubscription{
+		Topic: topic,
+		Group: group,
+	}
+}

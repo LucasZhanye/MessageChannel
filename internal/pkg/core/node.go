@@ -122,6 +122,11 @@ func (n *Node) Ack(req *protocol.AckRequest) error {
 	return n.engine.Ack(req)
 }
 
+func (n *Node) UnSubscribe(unsub *protocol.Unsubscription) error {
+
+	return nil
+}
+
 func (n *Node) Run() {
 	err := n.engine.Run()
 	if err != nil {
