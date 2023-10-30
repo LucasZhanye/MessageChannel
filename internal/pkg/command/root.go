@@ -2,6 +2,7 @@ package command
 
 import (
 	"messagechannel/internal/pkg/core"
+	"messagechannel/internal/pkg/core/config"
 	"messagechannel/internal/pkg/core/server"
 
 	"messagechannel/pkg/logger"
@@ -17,15 +18,17 @@ var rootCmd = &cobra.Command{
 	Short: "MessageChannel root cmd",
 	Run: func(cmd *cobra.Command, args []string) {
 		// binding flag
-		core.BindFlag(cmd, flagSet)
+		config.BindFlag(cmd, flagSet)
 		// load config
-		core.LoadConfig(configFile)
+		config.LoadConfig(configFile)
 
 		// init Logger
-		log, _ := logger.InitDefaultLog(logger.Config{Level: "info"})
+		log, _ := logger.InitDefaultLog(logger.Config{Level: "debug"})
 
 		// new Node
-		n := core.NewNode(log)
+		n := core.New(log)
+
+		n.Run()
 
 		go n.HandleSignals()
 
@@ -33,7 +36,10 @@ var rootCmd = &cobra.Command{
 		s := server.New(n)
 
 		// start Server
-		s.Run()
+		err := s.Run()
+		if err != nil {
+			panic(err)
+		}
 	},
 }
 

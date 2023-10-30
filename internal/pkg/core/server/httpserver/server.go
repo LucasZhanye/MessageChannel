@@ -6,6 +6,7 @@ import (
 
 	"messagechannel/internal/pkg/core"
 	v1 "messagechannel/internal/pkg/core/server/api/v1"
+	"messagechannel/pkg/safego"
 
 	"messagechannel/internal/pkg/transport/websocket"
 
@@ -94,12 +95,11 @@ func (s *HttpServer) Run() error {
 	// TODO: start TLS Server
 
 	// notify node exit
-	eg.Go(func() error {
+	safego.Execute(s.node.Log, func() {
 		for {
 			select {
 			case <-s.node.GetShutDownChan():
 				s.Stop()
-				return nil
 			}
 		}
 	})

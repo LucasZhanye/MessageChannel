@@ -8,5 +8,5 @@ type Transport interface {
 
 	Write([]byte) error
 
-	Close(CloseEvent) error
+	Close(*CloseEvent) error
 }

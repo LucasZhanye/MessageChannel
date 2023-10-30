@@ -39,7 +39,7 @@ func InitDefaultLog(conf Config) (Log, error) {
 	}
 
 	log := stdlog.New(os.Stdout, "", stdlog.LstdFlags)
-	log.SetFlags(stdlog.Ldate | stdlog.Lshortfile)
+	log.SetFlags(stdlog.Ldate | stdlog.Ltime | stdlog.Lshortfile)
 
 	return &defaultLog{
 		log:   log,

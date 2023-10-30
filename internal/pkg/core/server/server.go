@@ -28,8 +28,10 @@ func (s *Server) preConfig() {
 	s.httpServer.Initialize()
 }
 
-func (s *Server) Run() {
+func (s *Server) Run() error {
 	s.preConfig()
 
-	s.httpServer.Run()
+	err := s.httpServer.Run()
+
+	return err
 }

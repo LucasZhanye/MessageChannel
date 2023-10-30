@@ -1,12 +1,12 @@
 package websocket
 
 import (
-	"fmt"
 	"sync"
 	"time"
 
 	"messagechannel/internal/pkg/core"
 	"messagechannel/internal/pkg/transport"
+	"messagechannel/pkg/safego"
 	"net/http"
 
 	"github.com/gorilla/websocket"
@@ -70,7 +70,7 @@ func (h *WebSocketHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		conn.EnableWriteCompression(true)
 	}
 
-	go func() {
+	safego.Execute(h.node.Log, func() {
 		// interruptChan is a channel that's closed when c.readErr is changed from nil to a non-nil value.
 		// an notify of connect interrupt
 		interruptChan := make(chan struct{})
@@ -81,14 +81,18 @@ func (h *WebSocketHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		t := NewWebSocketTransport(conn, tConfig, interruptChan)
 
-		client := core.NewClient(h.node, t)
+		info := &core.ClientInfo{
+			Address: r.RemoteAddr,
+		}
+		client := core.NewClient(h.node, info, t)
+
 		// execute before goroutinue exit
 		defer client.Close(transport.CloseEventNormalClose)
 
-		h.node.Log.Info("client connected,remote address: %v", conn.RemoteAddr().String())
+		h.node.Log.Info("[%s]client connecting,remote address: %v", t.Name(), conn.RemoteAddr().String())
 
 		for {
-			_, r, err := conn.NextReader()
+			_, msg, err := conn.ReadMessage()
 			if err != nil {
 				h.node.Log.Error("connect next reader err: %v", err)
 				// Applications must break out of the application's read loop when this method
@@ -98,16 +102,12 @@ func (h *WebSocketHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 
-			var buffer []byte = make([]byte, 1024)
-			n, err := r.Read(buffer)
-			if err != nil {
-				fmt.Println(err)
+			// client handle request
+			closeEvent, ret := client.HandleRequest(msg)
+			if !ret {
+				client.Close(closeEvent)
+				break
 			}
-
-			fmt.Printf("n = %d, buffer = %s\n", n, string(buffer))
-
-			// client handle event
-			client.HandleEvent()
 		}
 
 		// issue#448：To prevent ping, pong and close handlers from setting the read deadline, set these handlers to the default.
@@ -124,7 +124,8 @@ func (h *WebSocketHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 		}
-	}()
+		h.node.Log.Debug("client[%s] Exit ServeHTTP", client.Identifie)
+	})
 }
 
 // WebSocketTransport
@@ -178,7 +179,7 @@ func (w *WebSocketTransport) Write(data []byte) error {
 	}
 }
 
-func (w *WebSocketTransport) Close(event transport.CloseEvent) error {
+func (w *WebSocketTransport) Close(event *transport.CloseEvent) error {
 	// lock，prevent call Close() many times that repeat close channel
 	w.lock.Lock()
 	if w.closed {
