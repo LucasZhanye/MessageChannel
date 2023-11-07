@@ -13,15 +13,16 @@ const (
 	ACKRESULT_REJECT
 )
 
-// Response sent from client to server
+// Request sent from client to server
 type Request struct {
-	Id          string
-	Connect     *ConnectRequest
-	Subscribe   *SubscribeRequest
-	Unsubscribe *UnsubscribeRequest
-	Publish     *PublishRequest
-	PublishWait *PublishWaitRequest
-	Ack         *AckRequest
+	CmdId            string
+	Connect          *ConnectRequest
+	Subscribe        *SubscribeRequest
+	Unsubscribe      *UnsubscribeRequest
+	Publish          *PublishRequest
+	SyncPublish      *SyncPublishRequest
+	SyncPublishReply *SyncPublishReplyRequest
+	Ack              *AckRequest
 }
 
 type ConnectRequest struct {
@@ -44,10 +45,16 @@ type PublishRequest struct {
 	Data  []byte `json:"data"`
 }
 
-type PublishWaitRequest struct {
+type SyncPublishRequest struct {
 	Topic    string        `json:"topic"`
 	Data     []byte        `json:"data"`
 	Timeouut time.Duration `json:"timeout"`
+}
+
+type SyncPublishReplyRequest struct {
+	MessageId string `json:"messageId"`
+	Data      []byte `json:"data"`
+	Header map[string]any `json:"header"`
 }
 
 type AckRequest struct {

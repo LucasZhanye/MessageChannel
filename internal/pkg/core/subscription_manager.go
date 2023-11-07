@@ -120,7 +120,12 @@ func (sm *SubscriptionManager) Remove(topic, group, clientIdentifie string) bool
 	if ok {
 		subs.Remove(clientIdentifie)
 		sm.total.Dec()
+		return true
 	}
 
 	return false
+}
+
+func (sm *SubscriptionManager) GetAll() *topic {
+	return sm.topics
 }

@@ -13,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	amqp "github.com/rabbitmq/amqp091-go"
 
 	"github.com/muesli/cache2go"
@@ -189,15 +188,19 @@ func (rabbit *RabbitMqEngine) Publish(publication *protocol.Publication) error {
 		return errors.New("Rabbitmq Engine not connected")
 	}
 
-	// topic name ignore case
-	topic := publication.Topic
-	data := publication.Data
-	clientId := publication.Identifie
+	msgId := protocol.GenerateMessageId()
 
-	return rabbit.publishMessage(clientId, topic, data, nil)
+	err := rabbit.publishMessage(config.BASE_TOPIC, publication, msgId, nil)
+	if err != nil {
+		rabbit.log.Error("client[%s] publish message[id=%s] fail, error = %v", publication.Identifie, msgId, err.Error())
+		return err
+	}
+
+	rabbit.log.Debug("client[%s] publish message[id=%s] success", publication.Identifie, msgId)
+	return nil
 }
 
-func (rabbit *RabbitMqEngine) publishMessage(clientId, topic string, data []byte, header Header) error {
+func (rabbit *RabbitMqEngine) publishMessage(targetExchange string, publication *protocol.Publication, msgId string, header Header) error {
 	channel := rabbit.AcquirePublishChannel()
 	if channel == nil {
 		return errors.New("Rabbitmq Engine can not get channel")
@@ -229,36 +232,31 @@ func (rabbit *RabbitMqEngine) publishMessage(clientId, topic string, data []byte
 	ctx, cancel := context.WithTimeout(context.Background(), rabbit.config.Publish.Timeout)
 	defer cancel()
 
-	messageId := uuid.New().String()
-
 	err := channel.PublishWithContext(
 		ctx,
-		config.BASE_TOPIC,
-		topic,
+		targetExchange,
+		publication.Topic,
 		rabbit.config.Publish.Mandatory,
 		rabbit.config.Publish.Immediate,
 		amqp.Publishing{
 			DeliveryMode: amqp.Persistent,
-			MessageId:    messageId,
-			UserId:       clientId,
-			Body:         data,
+			MessageId:    msgId,
+			AppId:        publication.Identifie,
+			Body:         publication.Data,
 			Headers:      amqp.Table(h),
 		},
 	)
 	if err != nil {
-		return fmt.Errorf("Rabbitmq publish message[id=%s] error: %v", messageId, err)
+		return fmt.Errorf("Rabbitmq publish message[id=%s] error: %v", msgId, err)
 	}
 
 	if !rabbit.config.Publish.Confirme {
-		rabbit.log.Debug("client[%s] publish message[id=%s] success", clientId, messageId)
 		return nil
 	} else {
 		// wait until delivery confirmation
 		if confimed := <-confirmChan; confimed.Ack {
-			rabbit.log.Debug("client[%s] publish message[id=%s] success", clientId, messageId)
 			return nil
 		} else {
-			rabbit.log.Error("client[%s] publish fail beacuse of rabbitmq not confirmed for message[id=%s] ", clientId, messageId)
 			return errors.New("rabbitmq not confirmed for message")
 		}
 	}
@@ -350,8 +348,162 @@ func (rabbit *RabbitMqEngine) Subscribe(subscription *protocol.Subscription) err
 }
 
 // UnSubscribe
-func (rabbit *RabbitMqEngine) UnSubscribe(_ *protocol.Unsubscription) error {
-	panic("not implemented")
+func (rabbit *RabbitMqEngine) UnSubscribe(unsubscription *protocol.Unsubscription) error {
+	rabbit.log.Info("UnSubscribe: topic = %s, group = %s, identifie = %s", unsubscription.Topic, unsubscription.Group, unsubscription.Identifie)
+
+	client := rabbit.subscriptionManager.Get(unsubscription.Topic, unsubscription.Group, unsubscription.Identifie)
+	if client != nil {
+		rabbit.subscriptionManager.Remove(unsubscription.Topic, unsubscription.Group, unsubscription.Identifie)
+
+		client.Info.RemoveSubscription(unsubscription.Topic)
+	}
+	return nil
+}
+
+func (rabbit *RabbitMqEngine) SyncPublish(syncpub *protocol.SyncPublication) (*protocol.Message, error) {
+	if rabbit.closed {
+		return nil, errors.New("Rabbitmq Engine is closed")
+	}
+
+	if !rabbit.connected {
+		return nil, errors.New("Rabbitmq Engine not connected")
+	}
+
+	// topic name ignore case
+	publication := &protocol.Publication{
+		Identifie: syncpub.Identifie,
+		Topic:     syncpub.Topic,
+		Data:      syncpub.Data,
+	}
+	timeout := syncpub.Timeout
+	if timeout <= 0 {
+
+	}
+	msgId := protocol.GenerateMessageId()
+
+	channel, err := rabbit.conn.Channel()
+	if err != nil {
+		return nil, fmt.Errorf("Rabbitmq connection get channel error:%v", err)
+	}
+
+	defer func() {
+		// _, err := channel.QueueDelete(msgId, false, false, rabbit.config.Queue.NoWait)
+		// if err != nil {
+		// 	rabbit.log.Error("Can not delete queue: %s", msgId)
+		// }
+
+		if err := channel.Close(); err != nil {
+			rabbit.log.Error("rabbitmq channel close error: %v", err)
+		}
+	}()
+
+	// create temp queue and bind to RESPONSE exchange
+	queue, err := channel.QueueDeclare(
+		msgId,
+		rabbit.config.Queue.Durable,
+		rabbit.config.Queue.AutoDelete,
+		rabbit.config.Queue.Exclusive,
+		rabbit.config.Queue.NoWait,
+		nil,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("Rabbitmq declare temp queue error:%v", err)
+	}
+
+	err = channel.QueueBind(
+		queue.Name,
+		msgId,
+		config.RESPONSE_EXCHANGE,
+		rabbit.config.QueueBind.NoWait,
+		nil,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("Rabbitmq bind queue error:%v", err)
+	}
+
+	messages, err := channel.Consume(
+		msgId,
+		msgId,
+		rabbit.config.Consume.AutoAck,
+		rabbit.config.Consume.Exclusive,
+		false, // The noLocal flag is not supported by RabbitMQ
+		rabbit.config.Consume.NoWait,
+		nil,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("Rabbitmq consume error:%v", err)
+	}
+
+	err = rabbit.publishMessage(config.BASE_TOPIC, publication, msgId, nil)
+	if err != nil {
+		rabbit.log.Error("client[%s] syncpublish message[id=%s] fail, error = %v", publication.Identifie, msgId, err.Error())
+		return nil, err
+	}
+
+	// start listen
+	notifyChannelClose := channel.NotifyClose(make(chan *amqp.Error))
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout))
+	defer cancel()
+
+	var response *protocol.Message
+
+	rabbit.log.Debug("Waiting response...")
+HandleListen:
+	select {
+	case <-rabbit.closeChan: // connection closed
+		err = errors.New("rabbitmq engine connection closed.")
+		break HandleListen
+
+	case e := <-notifyChannelClose: // channel closed
+		err = fmt.Errorf("rabbitmq engine channel closed, err = %v", e)
+		break HandleListen
+
+	case <-ctx.Done(): // timeout
+		err = errors.New("sync publish response timeout.")
+		break HandleListen
+
+	case msg, ok := <-messages:
+		if ok {
+
+			if msg.MessageId != msgId {
+				break HandleListen
+			}
+			response = &protocol.Message{
+				Id:        msgId,
+				Timestamp: time.Now().Unix(),
+				Payload:   msg.Body,
+			}
+			msg.Ack(false)
+		} else {
+			msg.Ack(false)
+			goto HandleListen
+		}
+	}
+
+	if response == nil {
+		return nil, err
+	}
+
+	return response, nil
+}
+
+func (rabbit *RabbitMqEngine) SyncPublishReply(syncPubReply *protocol.SyncPublicationReply) error {
+
+	publication := &protocol.Publication{
+		Identifie: syncPubReply.Identifie,
+		Topic:     syncPubReply.MessageId,
+		Data:      syncPubReply.Data,
+	}
+
+	err := rabbit.publishMessage(config.RESPONSE_EXCHANGE, publication, syncPubReply.MessageId, syncPubReply.Header)
+	if err != nil {
+		rabbit.log.Error("client[%s] reply message[id=%s] fail, error = %v", publication.Identifie, syncPubReply.MessageId, err.Error())
+		return err
+	}
+
+	rabbit.log.Debug("client[%s] reply message[id=%s] success", publication.Identifie, syncPubReply.MessageId)
+	return nil
 }
 
 func (rabbit *RabbitMqEngine) Ack(ackReq *protocol.AckRequest) error {
@@ -428,6 +580,19 @@ func (rabbit *RabbitMqEngine) init() error {
 	)
 	if err != nil {
 		return fmt.Errorf("Rabbitmq bind queue error:%v", err)
+	}
+
+	err = channel.ExchangeDeclare(
+		config.RESPONSE_EXCHANGE,
+		rabbit.config.Exchange.Type,
+		rabbit.config.Exchange.Durable,
+		rabbit.config.Exchange.AutoDelete,
+		rabbit.config.Exchange.Internal,
+		rabbit.config.Exchange.NoWait,
+		nil,
+	)
+	if err != nil {
+		return fmt.Errorf("Rabbitmq declare response exchange error:%v", err)
 	}
 
 	return nil
@@ -511,12 +676,13 @@ func (rabbit *RabbitMqEngine) handleMessage(message amqp.Delivery, subscription 
 
 	client := rabbit.subscriptionManager.Get(subscription.Topic, subscription.Group, subscription.Identifie)
 	if client != nil {
+		response := protocol.AcquireResponse(protocol.MESSAGE_RESPONSE_CMDID)
+		defer protocol.ReleaseResponse(response)
+
 		sendMsg := protocol.NewMessage(message.MessageId, message.Timestamp.Unix(), message.Body)
+		response = response.SetMessageResponse(sendMsg)
 
-		reply := protocol.ReplyPool.GetMessageReply(sendMsg)
-		defer protocol.ReplyPool.ReleaseMessageReply(reply)
-
-		err := client.Send(reply.ToJsonBytes())
+		err := client.Send(response.ToJsonBytes())
 		if err != nil {
 			// TODO: handle error, maybe retry
 			rabbit.log.Error("send data to client[%s] fail", subscription.Identifie)
@@ -562,7 +728,6 @@ func (rabbit *RabbitMqEngine) handleAckTimeout(item *cache2go.CacheItem) {
 
 	// routingkey means topic name, and exchange means group name
 	consumerCount := rabbit.subscriptionManager.GetSubscriptionCount(message.RoutingKey, message.Exchange)
-	rabbit.log.Debug("topic: %s, group: %s, consumer count = %d", message.RoutingKey, message.Exchange, consumerCount)
 
 	if consumerCount > 1 {
 		consumeTimes := int(message.Headers["consume_count"].(float64))
@@ -571,8 +736,14 @@ func (rabbit *RabbitMqEngine) handleAckTimeout(item *cache2go.CacheItem) {
 		if consumeTimes < consumerCount {
 			message.Headers["consume_count"] = consumeTimes + 1
 			// republish
-			err := rabbit.publishMessage(message.UserId, message.RoutingKey, message.Body, Header(message.Headers))
+			publication := &protocol.Publication{
+				Identifie: message.AppId,
+				Topic:     message.RoutingKey,
+				Data:      message.Body,
+			}
+			err := rabbit.publishMessage(config.BASE_TOPIC, publication, message.MessageId, Header(message.Headers))
 			if err != nil {
+				rabbit.log.Error("client[%s] transfer message[id=%s] to next client fail, error = %v", publication.Identifie, message.MessageId, err.Error())
 				message.Nack(false, false)
 			}
 		} else {

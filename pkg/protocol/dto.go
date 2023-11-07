@@ -1,6 +1,9 @@
 package protocol
 
-import "strings"
+import (
+	"strings"
+	"time"
+)
 
 type Publication struct {
 	Identifie string
@@ -8,16 +11,31 @@ type Publication struct {
 	Data      []byte
 }
 
-type Subscription struct {
+type SyncPublication struct {
 	Identifie string
 	Topic     string
-	Group     string
-	ExitChan  chan struct{}
+	Data      []byte
+	Timeout   time.Duration
+}
+
+type SyncPublicationReply struct {
+	Identifie string
+	MessageId string
+	Data      []byte
+	Header    map[string]any
+}
+
+type Subscription struct {
+	Identifie string        `json:"-"`
+	Topic     string        `json:"topic"`
+	Group     string        `json:"group"`
+	ExitChan  chan struct{} `json:"-"`
 }
 
 type Unsubscription struct {
-	Topic string
-	Group string
+	Identifie string
+	Topic     string
+	Group     string
 }
 
 func NewSubscription(identifie string, topic string, group string) *Subscription {
@@ -29,9 +47,10 @@ func NewSubscription(identifie string, topic string, group string) *Subscription
 	}
 }
 
-func NewUnSubscription(topic, group string) *Unsubscription {
+func NewUnSubscription(identifie, topic, group string) *Unsubscription {
 	return &Unsubscription{
-		Topic: topic,
-		Group: group,
+		Identifie: identifie,
+		Topic:     strings.ToLower(topic),
+		Group:     strings.ToLower(group),
 	}
 }

@@ -74,6 +74,14 @@ func (n *Node) GetShutDownChan() chan struct{} {
 	return n.shutdownChan
 }
 
+func (n *Node) GetClientManager() *ClientManager {
+	return n.clientManager
+}
+
+func (n *Node) GetSubscriptionManager() *SubscriptionManager {
+	return n.subscriptionManager
+}
+
 func (n *Node) Register(client *Client) error {
 	return n.clientManager.Add(client)
 }
@@ -83,34 +91,31 @@ func (n *Node) UnRegister(client *Client) {
 }
 
 func (n *Node) Subscribe(sub *protocol.Subscription) error {
-
-	err := n.engine.Subscribe(sub)
-	if err != nil {
-		return err
-	}
-
 	client, ok := n.clientManager.Get(sub.Identifie)
 	if !ok {
-		// exit subscribe goroutinue
-		close(sub.ExitChan)
-
 		return errors.New("client not register")
 	}
-
-	err = client.info.AddSubscription(sub)
-	if err != nil {
-		// exit subscribe goroutinue
-		close(sub.ExitChan)
-		return err
+	exist := client.Info.CheckSubscription(sub)
+	if !exist {
+		err := n.engine.Subscribe(sub)
+		if err != nil {
+			return err
+		}
+		err = client.Info.AddSubscription(sub)
+		if err != nil {
+			// exit subscribe goroutinue
+			close(sub.ExitChan)
+			return err
+		}
+		err = n.subscriptionManager.Add(sub.Topic, sub.Group, client)
+		if err != nil {
+			client.Info.RemoveSubscription(sub.Topic)
+			return err
+		}
+	} else {
+		return errors.New("Subscription topic exist")
 	}
 
-	err = n.subscriptionManager.Add(sub.Topic, sub.Group, client)
-	if err != nil {
-		// exit subscribe goroutinue
-		close(sub.ExitChan)
-		client.info.RemoveSubscription(sub)
-		return err
-	}
 	return nil
 }
 
@@ -118,13 +123,25 @@ func (n *Node) Publish(pub *protocol.Publication) error {
 	return n.engine.Publish(pub)
 }
 
+func (n *Node) SyncPublish(pub *protocol.SyncPublication) (*protocol.Message, error) {
+	resp, err := n.engine.SyncPublish(pub)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp, nil
+}
+
+func (n *Node) SyncPublishReply(reply *protocol.SyncPublicationReply) error {
+	return n.engine.SyncPublishReply(reply)
+}
+
 func (n *Node) Ack(req *protocol.AckRequest) error {
 	return n.engine.Ack(req)
 }
 
 func (n *Node) UnSubscribe(unsub *protocol.Unsubscription) error {
-
-	return nil
+	return n.engine.UnSubscribe(unsub)
 }
 
 func (n *Node) Run() {

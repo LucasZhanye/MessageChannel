@@ -18,6 +18,12 @@ type Engine interface {
 	// Publish
 	Publish(*protocol.Publication) error
 
+	// SyncPublish
+	SyncPublish(*protocol.SyncPublication) (*protocol.Message, error)
+
+	// SyncPublishReply
+	SyncPublishReply(*protocol.SyncPublicationReply) error
+
 	// Subscribe
 	Subscribe(*protocol.Subscription) error
 

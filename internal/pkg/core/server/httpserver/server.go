@@ -54,12 +54,22 @@ func (s *HttpServer) setMiddlewares() {
 
 func (s *HttpServer) setRoute() {
 	e := s.Engine
+	e.Use(func(ctx *gin.Context) {
+		ctx.Set("node", s.node)
+	})
+
 	apiV1 := e.Group("/api/v1")
 	{
 		apiV1.GET("/version", v1.VersionHandler)
 
 		// use gin.WrapH to wrap Handler，let handler as gin's HandlerFunc
 		apiV1.GET("/conn/websocket", gin.WrapH(websocket.NewWebSocketHandler(s.node)))
+
+		info := apiV1.Group("/info")
+		{
+			info.GET("/clients", v1.ClientInfoHandler)
+			info.GET("/subscription", v1.SubscriptionHandler)
+		}
 	}
 }
 

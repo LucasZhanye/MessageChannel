@@ -24,7 +24,7 @@ func (cm *ClientManager) Add(client *Client) error {
 
 	ok := cm.info.Has(client.Identifie)
 	if ok {
-		return fmt.Errorf("Client %s exist", client.Identifie)
+		return fmt.Errorf("Client[%s] exist", client.Identifie)
 	}
 
 	cm.info.Set(client.Identifie, client)
@@ -39,19 +39,30 @@ func (cm *ClientManager) Remove(identifie string) {
 		return
 	}
 
-	subs := client.info.subInfo
+	subs := client.Info.SubInfo
+	if subs != nil {
+		subs.IterCb(func(topic string, subscription *protocol.Subscription) {
+			// exit subscribe goroutinue
+			close(subscription.ExitChan)
+		})
+	}
 
-	subs.IterCb(func(topic string, subscription *protocol.Subscription) {
-		// exit subscribe goroutinue
-		close(subscription.ExitChan)
-	})
-
-	client.info.subInfo = nil
-	client.info = nil
+	client.Info.SubInfo = nil
+	client.Info = nil
 
 	cm.info.Remove(identifie)
 }
 
 func (cm *ClientManager) Get(identifie string) (*Client, bool) {
 	return cm.info.Get(identifie)
+}
+
+func (cm *ClientManager) GetAll() []*Client {
+	clientDtos := make([]*Client, 0)
+
+	cm.info.IterCb(func(key string, v *Client) {
+		clientDtos = append(clientDtos, v)
+	})
+
+	return clientDtos
 }

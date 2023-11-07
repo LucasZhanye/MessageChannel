@@ -5,8 +5,6 @@ import (
 	"messagechannel/pkg/protocol"
 	"strings"
 	"sync"
-
-	"github.com/lithammer/shortuuid/v4"
 )
 
 type status uint8
@@ -22,9 +20,9 @@ type Client struct {
 	node *Node
 
 	// generate by client name and uuid, such as clientA-xxxxx
-	Identifie string
+	Identifie string      `json:"identifie"`
+	Info      *ClientInfo `json:"info"`
 
-	info      *ClientInfo
 	transport transport.Transport
 
 	status status
@@ -35,24 +33,12 @@ type Client struct {
 func NewClient(node *Node, info *ClientInfo, transport transport.Transport) *Client {
 	client := &Client{
 		node:      node,
-		info:      info,
+		Info:      info,
 		transport: transport,
 		status:    CLIENT_STATUS_CONNECTING,
 	}
 
 	return client
-}
-
-func (c *Client) genClientId() string {
-	return shortuuid.New()
-}
-
-func (c *Client) setIdentifie(name, cid string) string {
-	return name + "-" + cid
-}
-
-func (c *Client) GetIdentifie() string {
-	return c.Identifie
 }
 
 // Send send data to client
@@ -93,7 +79,7 @@ func (c *Client) HandleRequest(msg []byte) (*transport.CloseEvent, bool) {
 	// convert to request struct
 	req := protocol.ConvertToRequest(msg)
 	if req == nil {
-		c.node.Log.Error("[client-%s]message can not convert to request struct", c.info.Address)
+		c.node.Log.Error("[client-%s]message can not convert to request struct", c.Info.Address)
 		return transport.CloseEventBadRequest, false
 	}
 
@@ -102,8 +88,10 @@ func (c *Client) HandleRequest(msg []byte) (*transport.CloseEvent, bool) {
 		err = c.handleConnect(req)
 	} else if req.Publish != nil {
 		err = c.handlePublish(req)
-	} else if req.PublishWait != nil {
-		err = c.handlePublishWait(req)
+	} else if req.SyncPublish != nil {
+		go c.handleSyncPublish(req)
+	} else if req.SyncPublishReply != nil {
+		err = c.handleSyncPublishReply(req)
 	} else if req.Subscribe != nil {
 		err = c.handleSubscribe(req)
 	} else if req.Unsubscribe != nil {
@@ -113,7 +101,7 @@ func (c *Client) HandleRequest(msg []byte) (*transport.CloseEvent, bool) {
 	}
 
 	if err != nil {
-		c.node.Log.Error("[client-%s]handle request (%+v) error: %v", c.info.Address, req, err)
+		c.node.Log.Error("[client-%s]handle request (%+v) error: %v", c.Info.Address, req, err)
 		return transport.CloseEventInternalError, false
 	}
 
@@ -123,30 +111,28 @@ func (c *Client) HandleRequest(msg []byte) (*transport.CloseEvent, bool) {
 func (c *Client) handleConnect(req *protocol.Request) error {
 	connectReq := req.Connect
 
-	var reply *protocol.Reply
+	response := protocol.AcquireResponse(req.CmdId)
+	defer protocol.ReleaseResponse(response)
 
-	var clientName string = c.info.Address
-
-	if connectReq.Name != "" {
-		clientName = connectReq.Name
+	if connectReq.Name == "" {
+		return c.Send(response.SetError(protocol.ErrConnect.WithReason("client name is null")).ToJsonBytes())
 	}
 
-	cid := c.genClientId()
-	c.Identifie = c.setIdentifie(clientName, cid)
-
-	reply = protocol.ReplyPool.GetResponseReply(protocol.OK.WithType(protocol.RESPONSE_CONNECT).WithMetaData(map[string]string{"identifie": c.Identifie}))
-	defer protocol.ReplyPool.ReleaseResponseReply(reply)
+	c.Identifie = connectReq.Name
 
 	// Add to ClientManager
 	err := c.node.Register(c)
 	if err != nil {
-		reply = protocol.ReplyPool.GetResponseReply(protocol.ErrParam.WithType(protocol.RESPONSE_CONNECT).WithMessage(err.Error()))
-		return c.Send(reply.SetId(req.Id).ToJsonBytes())
+		return c.Send(response.SetError(protocol.ErrConnect.WithReason(err.Error())).ToJsonBytes())
 	}
 
 	c.status = CLIENT_STATUS_CONNECTED
 
-	err = c.Send(reply.SetId(req.Id).ToJsonBytes())
+	resp := response.SetConnectResponse(&protocol.ConnectResponse{
+		Identifie: c.Identifie,
+	}).ToJsonBytes()
+
+	err = c.Send(resp)
 	if err != nil {
 		return err
 	}
@@ -156,7 +142,6 @@ func (c *Client) handleConnect(req *protocol.Request) error {
 }
 
 func (c *Client) handleSubscribe(req *protocol.Request) error {
-	var reply *protocol.Reply
 	var err error
 	var subscription *protocol.Subscription
 
@@ -164,35 +149,36 @@ func (c *Client) handleSubscribe(req *protocol.Request) error {
 
 	c.node.Log.Debug("subReq = %+v", subReq)
 
-	reply = protocol.ReplyPool.GetResponseReply(protocol.OK.WithType(protocol.RESPONSE_SUBSCRIBE))
-	defer protocol.ReplyPool.ReleaseResponseReply(reply)
+	response := protocol.AcquireResponse(req.CmdId)
+	defer protocol.ReleaseResponse(response)
 
 	if subReq.Identifie != c.Identifie {
-		reply = protocol.ReplyPool.GetResponseReply(protocol.ErrParam.WithType(protocol.RESPONSE_SUBSCRIBE).WithMessage("client id not match"))
+		response.SetError(protocol.ErrClientIdMatch)
 		goto Reply
 	}
+
 	if subReq.Topic == "" {
-		reply = protocol.ReplyPool.GetResponseReply(protocol.ErrParam.WithType(protocol.RESPONSE_SUBSCRIBE).WithMessage("topic is nul"))
+		response.SetError(protocol.ErrTopicIsNull)
 		goto Reply
 	}
 	if subReq.Group == "" {
-		reply = protocol.ReplyPool.GetResponseReply(protocol.ErrParam.WithType(protocol.RESPONSE_SUBSCRIBE).WithMessage("group is nul"))
+		response.SetError(protocol.ErrGroupIsNull)
 		goto Reply
 	}
 
 	subscription = protocol.NewSubscription(subReq.Identifie, subReq.Topic, subReq.Group)
 	err = c.node.Subscribe(subscription)
 	if err != nil {
-		reply = protocol.ReplyPool.GetResponseReply(protocol.ErrServer.WithType(protocol.RESPONSE_SUBSCRIBE).WithMessage(err.Error()))
+		response.SetError(protocol.ErrSubscribe.WithReason(err.Error()))
 		goto Reply
 	}
 
+	response.SetSubscribeResponse(&protocol.SubscribeResponse{})
 Reply:
-	return c.Send(reply.SetId(req.Id).ToJsonBytes())
+	return c.Send(response.ToJsonBytes())
 }
 
 func (c *Client) handleUnsubscribe(req *protocol.Request) error {
-	var reply *protocol.Reply
 	var err error
 	var unsub *protocol.Unsubscription
 
@@ -200,31 +186,32 @@ func (c *Client) handleUnsubscribe(req *protocol.Request) error {
 
 	c.node.Log.Debug("unsubReq = %+v", unsubReq)
 
-	reply = protocol.ReplyPool.GetResponseReply(protocol.OK.WithType(protocol.RESPONSE_UNSUBSCRIBE))
-	defer protocol.ReplyPool.ReleaseResponseReply(reply)
+	response := protocol.AcquireResponse(req.CmdId)
+	defer protocol.ReleaseResponse(response)
 
 	if unsubReq.Topic == "" {
-		reply = protocol.ReplyPool.GetResponseReply(protocol.ErrParam.WithType(protocol.RESPONSE_UNSUBSCRIBE).WithMessage("topic is nul"))
+		response.SetError(protocol.ErrTopicIsNull)
 		goto Reply
 	}
 	if unsubReq.Group == "" {
-		reply = protocol.ReplyPool.GetResponseReply(protocol.ErrParam.WithType(protocol.RESPONSE_UNSUBSCRIBE).WithMessage("group is nul"))
+		response.SetError(protocol.ErrGroupIsNull)
 		goto Reply
 	}
 
-	unsub = protocol.NewUnSubscription(unsubReq.Topic, unsubReq.Group)
+	unsub = protocol.NewUnSubscription(c.Identifie, unsubReq.Topic, unsubReq.Group)
+
 	err = c.node.UnSubscribe(unsub)
 	if err != nil {
-		reply = protocol.ReplyPool.GetResponseReply(protocol.ErrServer.WithType(protocol.RESPONSE_UNSUBSCRIBE).WithMessage(err.Error()))
+		response.SetError(protocol.ErrUnsubscribe.WithReason(err.Error()))
 		goto Reply
 	}
 
+	response.SetUnsubscribeResponse(&protocol.UnsubscribeResponse{})
 Reply:
-	return c.Send(reply.SetId(req.Id).ToJsonBytes())
+	return c.Send(response.ToJsonBytes())
 }
 
 func (c *Client) handlePublish(req *protocol.Request) error {
-	var reply *protocol.Reply
 	var err error
 	var publication *protocol.Publication
 
@@ -232,11 +219,15 @@ func (c *Client) handlePublish(req *protocol.Request) error {
 
 	c.node.Log.Debug("publishReq = %+v", publishReq)
 
-	reply = protocol.ReplyPool.GetResponseReply(protocol.OK.WithType(protocol.RESPONSE_PUBLISH))
-	defer protocol.ReplyPool.ReleaseResponseReply(reply)
+	response := protocol.AcquireResponse(req.CmdId)
+	defer protocol.ReleaseResponse(response)
 
-	if publishReq.Topic == "" || len(publishReq.Data) == 0 {
-		reply = protocol.ReplyPool.GetResponseReply(protocol.ErrParam.WithType(protocol.RESPONSE_PUBLISH).WithMessage("topic or data is nul"))
+	if publishReq.Topic == "" {
+		response.SetError(protocol.ErrTopicIsNull)
+		goto Reply
+	}
+	if len(publishReq.Data) == 0 {
+		response.SetError(protocol.ErrDataIsNull)
 		goto Reply
 	}
 
@@ -248,40 +239,109 @@ func (c *Client) handlePublish(req *protocol.Request) error {
 
 	err = c.node.Publish(publication)
 	if err != nil {
-		reply = protocol.ReplyPool.GetResponseReply(protocol.ErrServer.WithType(protocol.RESPONSE_PUBLISH).WithMessage(err.Error()))
+		response.SetError(protocol.ErrPublish.WithReason(err.Error()))
 		goto Reply
 	}
 
 Reply:
-	return c.Send(reply.SetId(req.Id).ToJsonBytes())
+	return c.Send(response.ToJsonBytes())
 }
 
-func (c *Client) handlePublishWait(req *protocol.Request) error {
-	return nil
+func (c *Client) handleSyncPublish(req *protocol.Request) error {
+	var err error
+	var message *protocol.Message
+	var syncPublication *protocol.SyncPublication
+
+	publishReq := req.SyncPublish
+
+	c.node.Log.Debug("sync publishReq = %+v", publishReq)
+
+	response := protocol.AcquireResponse(req.CmdId)
+	defer protocol.ReleaseResponse(response)
+
+	if publishReq.Topic == "" {
+		response.SetError(protocol.ErrTopicIsNull)
+		goto Reply
+	}
+	if len(publishReq.Data) == 0 {
+		response.SetError(protocol.ErrDataIsNull)
+		goto Reply
+	}
+
+	syncPublication = &protocol.SyncPublication{
+		Identifie: c.Identifie,
+		Topic:     strings.ToLower(publishReq.Topic),
+		Data:      publishReq.Data,
+		Timeout:   publishReq.Timeouut,
+	}
+
+	message, err = c.node.SyncPublish(syncPublication)
+	if err != nil {
+		response.SetError(protocol.ErrPublish.WithReason(err.Error()))
+		goto Reply
+	}
+
+	response.SetMessageResponse(message)
+Reply:
+	return c.Send(response.ToJsonBytes())
+
+}
+
+func (c *Client) handleSyncPublishReply(req *protocol.Request) error {
+	var err error
+	var reply *protocol.SyncPublicationReply
+	replyReq := req.SyncPublishReply
+
+	c.node.Log.Debug("replyReq = %+v", replyReq)
+
+	response := protocol.AcquireResponse(req.CmdId)
+	defer protocol.ReleaseResponse(response)
+
+	if replyReq.MessageId == "" {
+		response.SetError(protocol.ErrSyncPublishReply.WithReason("message id is null"))
+		goto Reply
+	}
+
+	reply = &protocol.SyncPublicationReply{
+		Identifie: c.Identifie,
+		MessageId: replyReq.MessageId,
+		Data:      replyReq.Data,
+		Header:    replyReq.Header,
+	}
+
+	err = c.node.SyncPublishReply(reply)
+	if err != nil {
+		response.SetError(protocol.ErrSyncPublishReply.WithReason(err.Error()))
+		goto Reply
+	}
+
+	response.SetSyncPublishReplyResponse(&protocol.SyncPublishReplyResponse{})
+Reply:
+	return c.Send(response.ToJsonBytes())
 }
 
 func (c *Client) handleAck(req *protocol.Request) error {
-	var reply *protocol.Reply
 	var err error
 
 	ackReq := req.Ack
 
 	c.node.Log.Debug("ackReq = %+v", ackReq)
 
-	reply = protocol.ReplyPool.GetResponseReply(protocol.OK.WithType(protocol.RESPONSE_ACK))
-	defer protocol.ReplyPool.ReleaseResponseReply(reply)
+	response := protocol.AcquireResponse(req.CmdId)
+	defer protocol.ReleaseResponse(response)
 
 	if ackReq.MessageId == "" {
-		reply = protocol.ReplyPool.GetResponseReply(protocol.ErrParam.WithType(protocol.RESPONSE_ACK).WithMessage("message id is nul"))
+		response.SetError(protocol.ErrAck.WithReason("message id is null"))
 		goto Reply
 	}
 
 	err = c.node.Ack(ackReq)
 	if err != nil {
-		reply = protocol.ReplyPool.GetResponseReply(protocol.ErrServer.WithType(protocol.RESPONSE_ACK).WithMessage(err.Error()))
+		response.SetError(protocol.ErrAck.WithReason(err.Error()))
 		goto Reply
 	}
 
+	response.SetAckResponse(&protocol.AckResponse{})
 Reply:
-	return c.Send(reply.SetId(req.Id).ToJsonBytes())
+	return c.Send(response.ToJsonBytes())
 }

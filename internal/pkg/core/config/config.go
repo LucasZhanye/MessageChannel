@@ -8,9 +8,12 @@ import (
 	"github.com/spf13/viper"
 )
 
+type Config struct {
+	Name string
+}
+
 // LoadConfig
 func LoadConfig(configFile string) {
-
 	// 指定配置文件
 	viper.SetConfigFile(configFile)
 

@@ -7,8 +7,8 @@ import (
 )
 
 type ClientInfo struct {
-	Address string
-	subInfo *subInfo
+	Address string   `json:"address"`
+	SubInfo *subInfo `json:"subscription"`
 }
 
 type subInfo struct {
@@ -22,17 +22,52 @@ func newSubInfo() *subInfo {
 	}
 }
 
-func (cm *ClientInfo) AddSubscription(subscription *protocol.Subscription) error {
-
-	if cm.subInfo == nil {
-		cm.subInfo = newSubInfo()
+func (ci *ClientInfo) AddSubscription(subscription *protocol.Subscription) error {
+	if ci.SubInfo == nil {
+		ci.SubInfo = newSubInfo()
 	}
 
-	cm.subInfo.Set(subscription.Topic, subscription)
+	ci.SubInfo.Set(subscription.Topic, subscription)
 
 	return nil
 }
 
-func (cm *ClientInfo) RemoveSubscription(subscription *protocol.Subscription) {
+func (ci *ClientInfo) CheckSubscription(subscription *protocol.Subscription) bool {
+	if ci.SubInfo == nil {
+		return false
+	}
 
+	return ci.SubInfo.Has(subscription.Topic)
+}
+
+func (ci *ClientInfo) GetSubscription(topic string) *protocol.Subscription {
+	if ci.SubInfo != nil {
+		sub, ok := ci.SubInfo.Get(topic)
+		if !ok {
+			return nil
+		}
+
+		return sub
+	}
+
+	return nil
+}
+
+func (ci *ClientInfo) RemoveSubscription(topic string) {
+	if ci.SubInfo != nil {
+		subscription := ci.GetSubscription(topic)
+
+		if subscription != nil {
+			ci.SubInfo.Remove(subscription.Topic)
+			close(subscription.ExitChan)
+		}
+	}
+}
+
+func (ci *ClientInfo) GetAllSubscription() map[string]*protocol.Subscription {
+	if ci.SubInfo != nil {
+		return ci.SubInfo.Items()
+	}
+
+	return nil
 }

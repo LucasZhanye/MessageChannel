@@ -1,46 +1,126 @@
 package protocol
 
-var (
-	OK        = response("success")
-	ErrParam  = response("param error")
-	ErrServer = response("internal error")
+import (
+	"encoding/json"
+	"sync"
 )
 
-type ResponseType uint8
+const MESSAGE_RESPONSE_CMDID = "0"
 
-const (
-	RESPONSE_CONNECT ResponseType = iota + 1
-	RESPONSE_PUBLISH
-	RESPONSE_SUBSCRIBE
-	RESPONSE_UNSUBSCRIBE
-	RESPONSE_ACK
-)
+var responsePool = sync.Pool{}
+
+func AcquireResponse(cmdId string) *Response {
+	r := responsePool.Get()
+	if r == nil {
+		return &Response{
+			CmdId: cmdId,
+		}
+	}
+
+	resp := r.(*Response)
+	resp.CmdId = cmdId
+
+	return resp
+}
+
+func ReleaseResponse(resp *Response) {
+	resp.CmdId = ""
+	resp.Error = nil
+	resp.Connect = nil
+	resp.Subscribe = nil
+	resp.Unsubscribe = nil
+	resp.Publish = nil
+	resp.SyncPublishReply = nil
+	resp.Ack = nil
+	resp.Message = nil
+	responsePool.Put(resp)
+}
 
 // Response sent from server to client
 type Response struct {
-	Type     ResponseType `json:"type"`
-	Reason   string       `json:"reason"`
-	Message  string       `json:"message"`
-	MetaData any          `json:"metadata"`
+	CmdId string
+	Error *Error
+
+	Connect          *ConnectResponse
+	Subscribe        *SubscribeResponse
+	Unsubscribe      *UnsubscribeResponse
+	Publish          *PublishResponse
+	SyncPublishReply *SyncPublishReplyResponse
+	Ack              *AckResponse
+	Message          *Message
 }
 
-func response(reason string) *Response {
-	return &Response{
-		Reason: reason,
-	}
+type ConnectResponse struct {
+	Identifie string
 }
 
-func (resp *Response) WithType(rtype ResponseType) *Response {
-	resp.Type = rtype
-	return resp
+type SubscribeResponse struct {
 }
 
-func (resp *Response) WithMessage(message string) *Response {
-	resp.Message = message
-	return resp
+type UnsubscribeResponse struct {
 }
 
-func (resp *Response) WithMetaData(data any) *Response {
-	resp.MetaData = data
-	return resp
+type PublishResponse struct {
+}
+
+type SyncPublishReplyResponse struct {
+}
+
+type AckResponse struct {
+}
+
+func (r *Response) SetCmdId(id string) *Response {
+	r.CmdId = id
+	return r
+}
+
+func (r *Response) SetError(err *Error) *Response {
+	r.Error = err
+	return r
+}
+
+func (r *Response) SetConnectResponse(connect *ConnectResponse) *Response {
+	r.Connect = connect
+	return r
+}
+
+func (r *Response) SetSubscribeResponse(sub *SubscribeResponse) *Response {
+	r.Subscribe = sub
+	return r
+}
+
+func (r *Response) SetUnsubscribeResponse(unsub *UnsubscribeResponse) *Response {
+	r.Unsubscribe = unsub
+	return r
+}
+
+func (r *Response) SetPublishResponse(pub *PublishResponse) *Response {
+	r.Publish = pub
+	return r
+}
+
+func (r *Response) SetSyncPublishReplyResponse(spub *SyncPublishReplyResponse) *Response {
+	r.SyncPublishReply = spub
+	return r
+}
+
+func (r *Response) SetAckResponse(ack *AckResponse) *Response {
+	r.Ack = ack
+	return r
+}
+
+func (r *Response) SetMessageResponse(msg *Message) *Response {
+	r.Message = msg
+	return r
+}
+
+func (r *Response) ToJsonString() string {
+	jsonByte, _ := json.Marshal(r)
+	return string(jsonByte)
+}
+
+func (r *Response) ToJsonBytes() []byte {
+	ret, _ := json.Marshal(r)
+
+	return ret
 }
