@@ -9,7 +9,8 @@ import (
 )
 
 type Config struct {
-	Name string
+	Name      string
+	TopicRule string
 }
 
 // LoadConfig
@@ -35,5 +36,15 @@ func LoadConfig(configFile string) {
 func BindFlag(cmd *cobra.Command, flags []string) {
 	for _, flag := range flags {
 		viper.BindPFlag(flag, cmd.Flags().Lookup(flag))
+	}
+}
+
+func NewConfig() *Config {
+	name := viper.GetString("name")
+	topicRule := viper.GetString("topic_rule")
+
+	return &Config{
+		Name:      name,
+		TopicRule: topicRule,
 	}
 }

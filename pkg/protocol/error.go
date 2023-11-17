@@ -30,9 +30,9 @@ var (
 		Message: "client identifie not match",
 	}
 
-	ErrTopicIsNull = &Error{
+	ErrTopicName = &Error{
 		Code:    10003,
-		Message: "topic is null",
+		Message: "topic not match rule",
 	}
 
 	ErrGroupIsNull = &Error{

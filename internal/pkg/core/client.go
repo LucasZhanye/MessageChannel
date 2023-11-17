@@ -3,6 +3,7 @@ package core
 import (
 	"messagechannel/internal/pkg/transport"
 	"messagechannel/pkg/protocol"
+	"regexp"
 	"strings"
 	"sync"
 )
@@ -67,6 +68,23 @@ func (c *Client) Close(event *transport.CloseEvent) error {
 	}
 
 	return nil
+}
+
+func (c *Client) ValidateTopicName(topic string) bool {
+	rule := c.node.Config.TopicRule
+	c.node.Log.Debug("topic rule = %v", rule)
+
+	if rule == "" {
+		return true
+	}
+
+	matched, err := regexp.MatchString(rule, topic)
+	if err != nil {
+		c.node.Log.Error("ValidateTopicName Error = %v", err)
+		return false
+	}
+
+	return matched
 }
 
 // HandleRequest handle request from client
@@ -157,8 +175,8 @@ func (c *Client) handleSubscribe(req *protocol.Request) error {
 		goto Reply
 	}
 
-	if subReq.Topic == "" {
-		response.SetError(protocol.ErrTopicIsNull)
+	if subReq.Topic == "" || !c.ValidateTopicName(subReq.Topic) {
+		response.SetError(protocol.ErrTopicName)
 		goto Reply
 	}
 	if subReq.Group == "" {
@@ -189,8 +207,8 @@ func (c *Client) handleUnsubscribe(req *protocol.Request) error {
 	response := protocol.AcquireResponse(req.CmdId)
 	defer protocol.ReleaseResponse(response)
 
-	if unsubReq.Topic == "" {
-		response.SetError(protocol.ErrTopicIsNull)
+	if unsubReq.Topic == "" || !c.ValidateTopicName(unsubReq.Topic) {
+		response.SetError(protocol.ErrTopicName)
 		goto Reply
 	}
 	if unsubReq.Group == "" {
@@ -222,8 +240,8 @@ func (c *Client) handlePublish(req *protocol.Request) error {
 	response := protocol.AcquireResponse(req.CmdId)
 	defer protocol.ReleaseResponse(response)
 
-	if publishReq.Topic == "" {
-		response.SetError(protocol.ErrTopicIsNull)
+	if publishReq.Topic == "" || !c.ValidateTopicName(publishReq.Topic) {
+		response.SetError(protocol.ErrTopicName)
 		goto Reply
 	}
 	if len(publishReq.Data) == 0 {
@@ -259,8 +277,8 @@ func (c *Client) handleSyncPublish(req *protocol.Request) error {
 	response := protocol.AcquireResponse(req.CmdId)
 	defer protocol.ReleaseResponse(response)
 
-	if publishReq.Topic == "" {
-		response.SetError(protocol.ErrTopicIsNull)
+	if publishReq.Topic == "" || !c.ValidateTopicName(publishReq.Topic) {
+		response.SetError(protocol.ErrTopicName)
 		goto Reply
 	}
 	if len(publishReq.Data) == 0 {

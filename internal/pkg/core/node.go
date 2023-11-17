@@ -6,15 +6,14 @@ import (
 	"os/signal"
 	"syscall"
 
+	"messagechannel/internal/pkg/core/config"
 	"messagechannel/pkg/logger"
 	"messagechannel/pkg/protocol"
-
-	"github.com/spf13/viper"
 )
 
 // Node represent current MessageChannel
 type Node struct {
-	Name string
+	Config *config.Config
 
 	Log logger.Log
 
@@ -27,8 +26,8 @@ type Node struct {
 
 // New
 func New(log logger.Log) *Node {
-	name := viper.GetString("name")
-	if name == "" {
+	cfg := config.NewConfig()
+	if cfg.Name == "" {
 		panic("node name must be provided")
 	}
 
@@ -41,7 +40,7 @@ func New(log logger.Log) *Node {
 	}
 
 	return &Node{
-		Name:                name,
+		Config:              cfg,
 		Log:                 log,
 		engine:              engine,
 		clientManager:       clientManager,

@@ -1,8 +1,8 @@
 name: nodeA
-
+topic_rule: ^messagechannel
 httpserver:
   shutdown_delay_time: 3s
-  insecure_address: 172.22.216.58
+  insecure_address:  172.26.160.148
   insecure_port: 8080
 transport:
   websocket:

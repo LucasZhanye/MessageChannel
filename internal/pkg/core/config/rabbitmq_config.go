@@ -69,6 +69,9 @@ type PublishConfig struct {
 }
 
 type ReconnectConfig struct {
+	Count     uint
+	Delay     time.Duration
+	MaxJitter time.Duration
 }
 
 // setDefaultConfig
@@ -103,6 +106,10 @@ func setDefaultConfig(prefix string) {
 
 		prefix + ".ack.max_worker": 32,
 		prefix + ".ack.timeout":    15 * time.Second,
+
+		prefix + ".reconnect.count":      10,
+		prefix + ".reconnect.delay":      500 * time.Millisecond,
+		prefix + ".reconnect.max_jitter": 500 * time.Millisecond,
 	}
 
 	for k, v := range defaultConfig {
@@ -144,6 +151,10 @@ func NewRabbitMqConfig(module string) *RabbitMqConfig {
 	ackWorker := viper.GetUint32(module + ".ack.max_worker")
 	ackTimeout := viper.GetDuration(module + ".ack.timeout")
 
+	reconnectCount := viper.GetUint(module + ".reconnect.count")
+	reconnectDelay := viper.GetDuration(module + ".reconnect.delay")
+	reconnectMaxJitter := viper.GetDuration(module + ".reconnect.max_jitter")
+
 	return &RabbitMqConfig{
 		Url: url,
 		AmqpConfig: &amqp.Config{
@@ -181,6 +192,11 @@ func NewRabbitMqConfig(module string) *RabbitMqConfig {
 		Ack: &AckConfig{
 			MaxWorker: ackWorker,
 			Timeout:   ackTimeout,
+		},
+		Reconnect: &ReconnectConfig{
+			Count:     reconnectCount,
+			Delay:     reconnectDelay,
+			MaxJitter: reconnectMaxJitter,
 		},
 	}
 }

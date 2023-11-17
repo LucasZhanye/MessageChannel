@@ -13,9 +13,9 @@ import (
 	"sync"
 	"time"
 
-	amqp "github.com/rabbitmq/amqp091-go"
-
+	"github.com/avast/retry-go/v4"
 	"github.com/muesli/cache2go"
+	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 var moduleName = "engine.rabbitmq"
@@ -67,6 +67,8 @@ func (rabbit *RabbitMqEngine) connect() error {
 		return nil
 	}
 
+	defer rabbit.lock.Unlock()
+
 	var conn *amqp.Connection
 	var err error
 
@@ -87,13 +89,26 @@ func (rabbit *RabbitMqEngine) connect() error {
 
 	rabbit.log.Info("Connected to rabbitmq engine.")
 
-	rabbit.lock.Unlock()
-
 	return nil
 }
 
 func (rabbit *RabbitMqEngine) reconnect() error {
-	return nil
+	rabbit.log.Debug("conf = %+v", rabbit.config.Reconnect)
+	err := retry.Do(func() error {
+		err := rabbit.connect()
+		if err == nil {
+			return nil
+		}
+
+		rabbit.log.Error("Cannot reconnect to rabbitmq,retry...")
+		return err
+	},
+		retry.Attempts(rabbit.config.Reconnect.Count),
+		retry.Delay(rabbit.config.Reconnect.Delay),
+		retry.MaxJitter(rabbit.config.Reconnect.MaxJitter),
+		retry.LastErrorOnly(true))
+
+	return err
 }
 
 func (rabbit *RabbitMqEngine) Close() {
@@ -108,6 +123,7 @@ func (rabbit *RabbitMqEngine) Close() {
 
 	close(rabbit.closeChan)
 	rabbit.connected = false
+	rabbit.closed = true
 
 	rabbit.log.Info("Closing Rabbitmq Engine...")
 
@@ -136,21 +152,22 @@ func (rabbit *RabbitMqEngine) Run() error {
 
 	// handle close
 	safego.Execute(rabbit.log, func() {
-
-		// watch rabbitmq connection not normal close
-		notifyClose := rabbit.conn.NotifyClose(make(chan *amqp.Error))
-
 		for {
+			// watch rabbitmq connection not normal close
+			notifyClose := rabbit.conn.NotifyClose(make(chan *amqp.Error))
+
 			select {
 			case <-rabbit.closeChan:
 				return
 			case <-notifyClose:
-				rabbit.log.Info("Rabbitmq Engine close notify,reconnect...")
+				rabbit.log.Info("Rabbitmq Engine close notify,try to reconnect...")
 				rabbit.connected = false
 				err := rabbit.reconnect()
 				if err != nil {
+					rabbit.log.Info("Rabbitmq Engine reconnect %d times fail", rabbit.config.Reconnect.Count)
 					// TODO: notify admin
 				}
+				rabbit.log.Info("Rabbitmq Engine reconnect success")
 			}
 		}
 	})
@@ -294,7 +311,7 @@ func (rabbit *RabbitMqEngine) Subscribe(subscription *protocol.Subscription) err
 		}
 
 		defer func() {
-			rabbit.log.Info("Exit subscribe goroutinue[topic=%s,group=%s,identifie=%s", subscription.Topic, subscription.Group, subscription.Identifie)
+			rabbit.log.Info("Exit subscribe goroutinue[topic=%s,group=%s,identifie=%s]", subscription.Topic, subscription.Group, subscription.Identifie)
 			if err := channel.Close(); err != nil {
 				eChan <- err
 			}
