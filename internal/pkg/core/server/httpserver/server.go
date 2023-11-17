@@ -3,9 +3,12 @@ package httpserver
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"messagechannel/internal/pkg/core"
 	v1 "messagechannel/internal/pkg/core/server/api/v1"
+	"messagechannel/internal/pkg/web"
+	"messagechannel/pkg/middleware"
 	"messagechannel/pkg/safego"
 
 	"messagechannel/internal/pkg/transport/websocket"
@@ -25,14 +28,13 @@ type HttpServer struct {
 	secureServer   *http.Server
 	insecureServer *http.Server
 
-	middlewares []string
+	// middlewares []string
 
 	node   *core.Node
 	config *Config
 }
 
 func New(node *core.Node) *HttpServer {
-
 	return &HttpServer{
 		Engine: gin.New(),
 		node:   node,
@@ -49,14 +51,14 @@ func (s *HttpServer) setup() {
 
 // setMiddlewares setting middlewares
 func (s *HttpServer) setMiddlewares() {
+	s.Engine.Use(gin.Recovery(), gin.Logger())
 
+	s.Engine.Use(middleware.ServerStatic(web.FileName, web.Web))
+	s.Engine.Use(middleware.PassParameters("node", s.node))
 }
 
 func (s *HttpServer) setRoute() {
 	e := s.Engine
-	e.Use(func(ctx *gin.Context) {
-		ctx.Set("node", s.node)
-	})
 
 	apiV1 := e.Group("/api/v1")
 	{
@@ -65,8 +67,19 @@ func (s *HttpServer) setRoute() {
 		// use gin.WrapH to wrap Handler，let handler as gin's HandlerFunc
 		apiV1.GET("/conn/websocket", gin.WrapH(websocket.NewWebSocketHandler(s.node)))
 
-		info := apiV1.Group("/info")
+		info := apiV1.Group("/admin")
 		{
+			info.POST("/login", func(ctx *gin.Context) {
+				type UserInfo struct {
+					UserName string `json:"username"`
+					Password string `json:"password"`
+				}
+				u := &UserInfo{}
+				ctx.ShouldBindJSON(u)
+
+				fmt.Printf("info = %+v", u)
+				ctx.JSON(200, "Hello WOrld")
+			})
 			info.GET("/clients", v1.ClientInfoHandler)
 			info.GET("/subscription", v1.SubscriptionHandler)
 		}
