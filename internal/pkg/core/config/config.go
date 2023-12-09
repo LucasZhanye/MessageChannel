@@ -9,8 +9,9 @@ import (
 )
 
 type Config struct {
-	Name      string
-	TopicRule string
+	Name       string
+	TopicRule  string
+	EngineType string
 }
 
 // LoadConfig
@@ -42,9 +43,11 @@ func BindFlag(cmd *cobra.Command, flags []string) {
 func NewConfig() *Config {
 	name := viper.GetString("name")
 	topicRule := viper.GetString("topic_rule")
+	engineType := viper.GetString("engine_type")
 
 	return &Config{
-		Name:      name,
-		TopicRule: topicRule,
+		Name:       name,
+		TopicRule:  topicRule,
+		EngineType: engineType,
 	}
 }

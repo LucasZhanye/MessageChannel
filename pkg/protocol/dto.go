@@ -26,10 +26,10 @@ type SyncPublicationReply struct {
 }
 
 type Subscription struct {
-	Identifie string        `json:"-"`
-	Topic     string        `json:"topic"`
-	Group     string        `json:"group"`
-	ExitChan  chan struct{} `json:"-"`
+	Identifie string
+	Topic     string
+	Group     string
+	ExitChan  chan struct{}
 }
 
 type Unsubscription struct {

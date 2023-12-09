@@ -1,12 +1,12 @@
-package httpserver
+package server
 
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"messagechannel/internal/pkg/core"
 	v1 "messagechannel/internal/pkg/core/server/api/v1"
+	"messagechannel/internal/pkg/core/server/config"
 	"messagechannel/internal/pkg/web"
 	"messagechannel/pkg/middleware"
 	"messagechannel/pkg/safego"
@@ -20,8 +20,6 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-var moduleName string = "httpserver"
-
 type HttpServer struct {
 	*gin.Engine
 
@@ -31,30 +29,43 @@ type HttpServer struct {
 	// middlewares []string
 
 	node   *core.Node
-	config *Config
+	config *config.HttpConfig
 }
 
-func New(node *core.Node) *HttpServer {
+func NewHttpServer(node *core.Node) *HttpServer {
 	return &HttpServer{
 		Engine: gin.New(),
 		node:   node,
-		config: NewConfig(moduleName),
+		config: config.NewHttpConfig(),
 	}
 }
 
 // setup preset for gin
-func (s *HttpServer) setup() {
+func (s *HttpServer) setup() error {
 	gin.DebugPrintRouteFunc = func(httpMethod, absolutePath, handlerName string, nuHandlers int) {
 		s.node.Log.Info("%-6s %-s --> %s (%d handlers)", httpMethod, absolutePath, handlerName, nuHandlers)
 	}
+
+	// check web manager page
+	if s.config.Web.Enable {
+		if s.config.Web.Password == "" {
+			return errors.New("Enable web manager page must be set password on config file")
+		}
+	}
+
+	return nil
 }
 
 // setMiddlewares setting middlewares
 func (s *HttpServer) setMiddlewares() {
 	s.Engine.Use(gin.Recovery(), gin.Logger())
 
-	s.Engine.Use(middleware.ServerStatic(web.FileName, web.Web))
 	s.Engine.Use(middleware.PassParameters("node", s.node))
+	s.Engine.Use(middleware.PassParameters("config", s.config))
+
+	if s.config.Web.Enable {
+		s.Engine.Use(middleware.ServerStatic(web.FileName, web.Web))
+	}
 }
 
 func (s *HttpServer) setRoute() {
@@ -67,30 +78,29 @@ func (s *HttpServer) setRoute() {
 		// use gin.WrapH to wrap Handler，let handler as gin's HandlerFunc
 		apiV1.GET("/conn/websocket", gin.WrapH(websocket.NewWebSocketHandler(s.node)))
 
-		info := apiV1.Group("/admin")
-		{
-			info.POST("/login", func(ctx *gin.Context) {
-				type UserInfo struct {
-					UserName string `json:"username"`
-					Password string `json:"password"`
-				}
-				u := &UserInfo{}
-				ctx.ShouldBindJSON(u)
+		if s.config.Web.Enable {
+			apiV1.POST("/login", v1.LoginHandler)
 
-				fmt.Printf("info = %+v", u)
-				ctx.JSON(200, "Hello WOrld")
-			})
-			info.GET("/clients", v1.ClientInfoHandler)
-			info.GET("/subscription", v1.SubscriptionHandler)
+			web := apiV1.Group("/dashboard").Use(middleware.JWT(s.config.Web.Secret))
+			{
+				web.GET("/sysinfo", v1.SystemInfoHandler)
+				web.GET("/clients", v1.ClientInfoHandler)
+				web.GET("/subscriptions", v1.SubscriptionHandler)
+				web.POST("/subscribe", v1.SubscribeHandler)
+				web.POST("/unsubscribe", v1.UnsubscribeHandler)
+			}
 		}
+
 	}
 }
 
 // Initialize Server Initialize
-func (s *HttpServer) Initialize() {
-	s.setup()
+func (s *HttpServer) Initialize() error {
+	err := s.setup()
 	s.setMiddlewares()
 	s.setRoute()
+
+	return err
 }
 
 // Run start server

@@ -1,0 +1,1 @@
+import{am as n,c as t,f as c,i as e,e as s,o as a,aj as _}from"./index-04406ec4.js";const r={},l=s("br",null,null,-1);function i(d,m){const o=_;return a(),t("h1",null,[c(o,{iconName:"icon-smile",style:{"font-size":"40px"}}),e(" Waitting... "),l,e(" To be developed ")])}const u=n(r,[["render",i]]);export{u as default};

@@ -7,8 +7,9 @@ import (
 )
 
 type ClientInfo struct {
-	Address string   `json:"address"`
-	SubInfo *subInfo `json:"subscription"`
+	Address     string   `json:"address"`
+	ConnectTime int64    `json:"connect_time"`
+	SubInfo     *subInfo `json:"subinfo"`
 }
 
 type subInfo struct {

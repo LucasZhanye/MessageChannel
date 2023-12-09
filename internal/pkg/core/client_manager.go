@@ -66,3 +66,7 @@ func (cm *ClientManager) GetAll() []*Client {
 
 	return clientDtos
 }
+
+func (cm *ClientManager) GetTotalClientCount() int {
+	return cm.info.Count()
+}

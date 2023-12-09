@@ -8,6 +8,8 @@ import (
 	"github.com/spf13/viper"
 )
 
+const moduleName = "transport.websocket"
+
 // WebSocketConfig
 type WebSocketConfig struct {
 	// size of read buffer
@@ -36,16 +38,16 @@ type WebSocketConfig struct {
 }
 
 // setDefaultConfig
-func setDefaultConfig(prefix string) {
+func setDefaultConfig() {
 
 	defaultConfig := map[string]any{
-		prefix + ".read_buffer_size":      1024,
-		prefix + ".write_buffer_size":     1024,
-		prefix + ".use_write_buffer_pool": false,
-		prefix + ".enable_compression":    false,
-		prefix + ".compression_level":     1,
-		prefix + ".start_ping":            false,
-		prefix + ".ping_interval":         time.Duration(30 * time.Second),
+		moduleName + ".read_buffer_size":      1024,
+		moduleName + ".write_buffer_size":     1024,
+		moduleName + ".use_write_buffer_pool": false,
+		moduleName + ".enable_compression":    false,
+		moduleName + ".compression_level":     1,
+		moduleName + ".start_ping":            false,
+		moduleName + ".ping_interval":         time.Duration(30 * time.Second),
 	}
 
 	for k, v := range defaultConfig {
@@ -54,17 +56,17 @@ func setDefaultConfig(prefix string) {
 }
 
 // NewWebSocketConfig
-func NewWebSocketConfig(module string) *WebSocketConfig {
+func NewWebSocketConfig() *WebSocketConfig {
 
-	setDefaultConfig(module)
+	setDefaultConfig()
 
-	readBufferSize := viper.GetInt(module + ".read_buffer_size")
-	writeBufferSize := viper.GetInt(module + ".write_buffer_size")
-	useWriteBufferPool := viper.GetBool(module + ".use_write_buffer_pool")
-	enableCompression := viper.GetBool(module + ".enable_compression")
-	compressionLevel := viper.GetInt(module + ".compression_level")
-	startPing := viper.GetBool(module + ".start_ping")
-	pingInterval := viper.GetDuration(module + ".ping_interval")
+	readBufferSize := viper.GetInt(moduleName + ".read_buffer_size")
+	writeBufferSize := viper.GetInt(moduleName + ".write_buffer_size")
+	useWriteBufferPool := viper.GetBool(moduleName + ".use_write_buffer_pool")
+	enableCompression := viper.GetBool(moduleName + ".enable_compression")
+	compressionLevel := viper.GetInt(moduleName + ".compression_level")
+	startPing := viper.GetBool(moduleName + ".start_ping")
+	pingInterval := viper.GetDuration(moduleName + ".ping_interval")
 
 	return &WebSocketConfig{
 		ReadBufferSize:     readBufferSize,

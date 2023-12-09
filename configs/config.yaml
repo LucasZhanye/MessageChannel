@@ -1,15 +1,21 @@
 name: nodeA
 topic_rule: ^messagechannel
-httpserver:
-  shutdown_delay_time: 3s
-  insecure_address:  172.26.160.148
-  insecure_port: 8080
+engine_type: rabbitmq
+server:
+  http:
+    shutdown_delay_time: 3s
+    insecure_address: 172.31.16.130
+    insecure_port: 8080
+    web:
+      enable: true
+      password: hello
+      secret: 123456
+      expire_time: 2h
 transport:
   websocket:
     read_buffer_size: 20
     start_ping: true
 engine:
-  type: rabbitmq
   rabbitmq:
     url: amqp://admin:admin@localhost:45672
 

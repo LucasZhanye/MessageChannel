@@ -3,9 +3,9 @@ package core
 import (
 	"messagechannel/internal/pkg/transport"
 	"messagechannel/pkg/protocol"
-	"regexp"
 	"strings"
 	"sync"
+	"time"
 )
 
 type status uint8
@@ -70,23 +70,6 @@ func (c *Client) Close(event *transport.CloseEvent) error {
 	return nil
 }
 
-func (c *Client) ValidateTopicName(topic string) bool {
-	rule := c.node.Config.TopicRule
-	c.node.Log.Debug("topic rule = %v", rule)
-
-	if rule == "" {
-		return true
-	}
-
-	matched, err := regexp.MatchString(rule, topic)
-	if err != nil {
-		c.node.Log.Error("ValidateTopicName Error = %v", err)
-		return false
-	}
-
-	return matched
-}
-
 // HandleRequest handle request from client
 // such as subscribe,unsubscribe,publish etc.
 func (c *Client) HandleRequest(msg []byte) (*transport.CloseEvent, bool) {
@@ -137,6 +120,7 @@ func (c *Client) handleConnect(req *protocol.Request) error {
 	}
 
 	c.Identifie = connectReq.Name
+	c.Info.ConnectTime = time.Now().Unix()
 
 	// Add to ClientManager
 	err := c.node.Register(c)
@@ -175,12 +159,8 @@ func (c *Client) handleSubscribe(req *protocol.Request) error {
 		goto Reply
 	}
 
-	if subReq.Topic == "" || !c.ValidateTopicName(subReq.Topic) {
-		response.SetError(protocol.ErrTopicName)
-		goto Reply
-	}
-	if subReq.Group == "" {
-		response.SetError(protocol.ErrGroupIsNull)
+	if subReq.Topic == "" || subReq.Group == "" {
+		response.SetError(protocol.ErrParamIsNull)
 		goto Reply
 	}
 
@@ -207,12 +187,8 @@ func (c *Client) handleUnsubscribe(req *protocol.Request) error {
 	response := protocol.AcquireResponse(req.CmdId)
 	defer protocol.ReleaseResponse(response)
 
-	if unsubReq.Topic == "" || !c.ValidateTopicName(unsubReq.Topic) {
-		response.SetError(protocol.ErrTopicName)
-		goto Reply
-	}
-	if unsubReq.Group == "" {
-		response.SetError(protocol.ErrGroupIsNull)
+	if unsubReq.Topic == "" || unsubReq.Group == "" {
+		response.SetError(protocol.ErrParamIsNull)
 		goto Reply
 	}
 
@@ -240,8 +216,8 @@ func (c *Client) handlePublish(req *protocol.Request) error {
 	response := protocol.AcquireResponse(req.CmdId)
 	defer protocol.ReleaseResponse(response)
 
-	if publishReq.Topic == "" || !c.ValidateTopicName(publishReq.Topic) {
-		response.SetError(protocol.ErrTopicName)
+	if publishReq.Topic == "" {
+		response.SetError(protocol.ErrParamIsNull)
 		goto Reply
 	}
 	if len(publishReq.Data) == 0 {
@@ -277,8 +253,8 @@ func (c *Client) handleSyncPublish(req *protocol.Request) error {
 	response := protocol.AcquireResponse(req.CmdId)
 	defer protocol.ReleaseResponse(response)
 
-	if publishReq.Topic == "" || !c.ValidateTopicName(publishReq.Topic) {
-		response.SetError(protocol.ErrTopicName)
+	if publishReq.Topic == "" {
+		response.SetError(protocol.ErrParamIsNull)
 		goto Reply
 	}
 	if len(publishReq.Data) == 0 {

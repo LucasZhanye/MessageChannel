@@ -30,43 +30,38 @@ var (
 		Message: "client identifie not match",
 	}
 
-	ErrTopicName = &Error{
+	ErrParamIsNull = &Error{
 		Code:    10003,
-		Message: "topic not match rule",
-	}
-
-	ErrGroupIsNull = &Error{
-		Code:    10004,
-		Message: "group is null",
+		Message: "param is null",
 	}
 
 	ErrSubscribe = &Error{
-		Code:    10005,
+		Code:    10004,
 		Message: "subscribe fail",
 	}
 
 	ErrUnsubscribe = &Error{
-		Code:    10006,
+		Code:    10005,
 		Message: "unsubscribe fail",
 	}
 
 	ErrDataIsNull = &Error{
-		Code:    10007,
+		Code:    10006,
 		Message: "data is null",
 	}
 
 	ErrPublish = &Error{
-		Code:    10008,
+		Code:    10007,
 		Message: "publish fail",
 	}
 
 	ErrAck = &Error{
-		Code:    10009,
+		Code:    10008,
 		Message: "publish fail",
 	}
 
 	ErrSyncPublishReply = &Error{
-		Code:    10010,
+		Code:    10009,
 		Message: "sync publish reply fail",
 	}
 )

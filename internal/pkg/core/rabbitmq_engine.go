@@ -18,8 +18,6 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-var moduleName = "engine.rabbitmq"
-
 type Header amqp.Table
 
 type RabbitMqEngine struct {
@@ -41,7 +39,7 @@ type RabbitMqEngine struct {
 }
 
 func NewRabbitMqEngine(log logger.Log, subscriptionManager *SubscriptionManager) (*RabbitMqEngine, error) {
-	config := config.NewRabbitMqConfig(moduleName)
+	config := config.NewRabbitMqConfig()
 
 	engine := &RabbitMqEngine{
 		config:              config,
@@ -52,7 +50,7 @@ func NewRabbitMqEngine(log logger.Log, subscriptionManager *SubscriptionManager)
 		closeChan:           make(chan struct{}),
 	}
 
-	cache := cache2go.Cache(moduleName)
+	cache := cache2go.Cache("rabbitmq")
 	cache.SetOnExpiredCallback(engine.handleAckTimeout)
 
 	engine.ackCache = cache
@@ -370,8 +368,8 @@ func (rabbit *RabbitMqEngine) UnSubscribe(unsubscription *protocol.Unsubscriptio
 
 	client := rabbit.subscriptionManager.Get(unsubscription.Topic, unsubscription.Group, unsubscription.Identifie)
 	if client != nil {
-		rabbit.subscriptionManager.Remove(unsubscription.Topic, unsubscription.Group, unsubscription.Identifie)
-
+		// client goroutinue exit will remove subscription
+		// rabbit.subscriptionManager.Remove(unsubscription.Topic, unsubscription.Group, unsubscription.Identifie)
 		client.Info.RemoveSubscription(unsubscription.Topic)
 	}
 	return nil

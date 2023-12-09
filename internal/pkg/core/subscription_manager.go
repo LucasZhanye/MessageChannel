@@ -8,15 +8,15 @@ import (
 )
 
 type SubscriptionManager struct {
-	topics *topic
+	topics *Topic
 	total  atomic.Uint32
 }
 
-type topic struct {
-	cmap.ConcurrentMap[string, *group] // key is topic name
+type Topic struct {
+	cmap.ConcurrentMap[string, *Group] // key is topic name
 }
 
-type group struct {
+type Group struct {
 	cmap.ConcurrentMap[string, *Subscription] // key is group name
 }
 
@@ -24,8 +24,8 @@ type Subscription struct {
 	cmap.ConcurrentMap[string, *Client] // key is client's identifie
 }
 
-func newgroup() *group {
-	return &group{
+func newgroup() *Group {
+	return &Group{
 		cmap.New[*Subscription](),
 	}
 }
@@ -38,8 +38,8 @@ func NewSubscription() *Subscription {
 
 func NewSubscriptionManager() *SubscriptionManager {
 	return &SubscriptionManager{
-		topics: &topic{
-			cmap.New[*group](),
+		topics: &Topic{
+			cmap.New[*Group](),
 		},
 	}
 }
@@ -87,7 +87,6 @@ func (sm *SubscriptionManager) Add(topic, group string, client *Client) error {
 		sm.topics.Set(topic, g)
 
 	}
-
 	sm.total.Inc()
 	return nil
 }
@@ -126,6 +125,10 @@ func (sm *SubscriptionManager) Remove(topic, group, clientIdentifie string) bool
 	return false
 }
 
-func (sm *SubscriptionManager) GetAll() *topic {
+func (sm *SubscriptionManager) GetAll() *Topic {
 	return sm.topics
+}
+
+func (sm *SubscriptionManager) GetTotalSubscriptionCount() int {
+	return int(sm.total.Load())
 }

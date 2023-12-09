@@ -50,7 +50,7 @@ func InitCmd() *cobra.Command {
 	rootCmd.Flags().StringP("test", "t", "abc", "test string")
 
 	flagSet = append(flagSet, "test")
-	rootCmd.AddCommand(versionCmd)
 
+	InitVersionCmd(rootCmd)
 	return rootCmd
 }

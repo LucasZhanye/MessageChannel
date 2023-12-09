@@ -9,8 +9,12 @@ import (
 
 var versionCmd = &cobra.Command{
 	Use:   "version",
-	Short: "show MessageChannel version",
+	Short: "Show MessageChannel version",
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Printf("current version: %s\n", version.Get())
 	},
+}
+
+func InitVersionCmd(root *cobra.Command) {
+	root.AddCommand(versionCmd)
 }

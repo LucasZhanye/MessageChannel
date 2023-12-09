@@ -8,6 +8,8 @@ import (
 	"github.com/spf13/viper"
 )
 
+const moduleName = "engine.rabbitmq"
+
 const (
 	BASE_TOPIC           = "default.basic.topic"
 	DEAD_LETTER_EXCHANGE = "default.deadletter.exchange"
@@ -75,41 +77,41 @@ type ReconnectConfig struct {
 }
 
 // setDefaultConfig
-func setDefaultConfig(prefix string) {
+func setDefaultConfig() {
 
 	defaultConfig := map[string]any{
-		prefix + ".vhost":       "/",
-		prefix + ".max_channel": (2 << 15) - 1,
+		moduleName + ".vhost":       "/",
+		moduleName + ".max_channel": (2 << 15) - 1,
 
-		prefix + ".exchange.type":       "topic",
-		prefix + ".exchange.durable":    true,
-		prefix + ".exchange.autodelete": false,
-		prefix + ".exchange.internal":   false,
-		prefix + ".exchange.nowait":     false,
+		moduleName + ".exchange.type":       "topic",
+		moduleName + ".exchange.durable":    true,
+		moduleName + ".exchange.autodelete": false,
+		moduleName + ".exchange.internal":   false,
+		moduleName + ".exchange.nowait":     false,
 
-		prefix + ".queue.durable":    true,
-		prefix + ".queue.autodelete": false,
-		prefix + ".queue.exclusive":  false,
-		prefix + ".queue.nowait":     false,
+		moduleName + ".queue.durable":    true,
+		moduleName + ".queue.autodelete": false,
+		moduleName + ".queue.exclusive":  false,
+		moduleName + ".queue.nowait":     false,
 
-		prefix + ".bind.routing_key": "",
-		prefix + ".bind.nowait":      false,
+		moduleName + ".bind.routing_key": "",
+		moduleName + ".bind.nowait":      false,
 
-		prefix + ".consume.auto_ack":  false,
-		prefix + ".consume.exclusive": false,
-		prefix + ".consume.nowait":    false,
+		moduleName + ".consume.auto_ack":  false,
+		moduleName + ".consume.exclusive": false,
+		moduleName + ".consume.nowait":    false,
 
-		prefix + ".publish.mandatory": false,
-		prefix + ".publish.immediate": false,
-		prefix + ".publish.confirme":  true,
-		prefix + ".publish.timeout":   5 * time.Second,
+		moduleName + ".publish.mandatory": false,
+		moduleName + ".publish.immediate": false,
+		moduleName + ".publish.confirme":  true,
+		moduleName + ".publish.timeout":   5 * time.Second,
 
-		prefix + ".ack.max_worker": 32,
-		prefix + ".ack.timeout":    15 * time.Second,
+		moduleName + ".ack.max_worker": 32,
+		moduleName + ".ack.timeout":    15 * time.Second,
 
-		prefix + ".reconnect.count":      10,
-		prefix + ".reconnect.delay":      500 * time.Millisecond,
-		prefix + ".reconnect.max_jitter": 500 * time.Millisecond,
+		moduleName + ".reconnect.count":      10,
+		moduleName + ".reconnect.delay":      500 * time.Millisecond,
+		moduleName + ".reconnect.max_jitter": 500 * time.Millisecond,
 	}
 
 	for k, v := range defaultConfig {
@@ -117,43 +119,42 @@ func setDefaultConfig(prefix string) {
 	}
 }
 
-func NewRabbitMqConfig(module string) *RabbitMqConfig {
+func NewRabbitMqConfig() *RabbitMqConfig {
+	setDefaultConfig()
 
-	setDefaultConfig(module)
+	url := viper.GetString(moduleName + ".url")
+	vhost := viper.GetString(moduleName + ".vhost")
+	channelMax := viper.GetInt(moduleName + ".max_channel")
 
-	url := viper.GetString(module + ".url")
-	vhost := viper.GetString(module + ".vhost")
-	channelMax := viper.GetInt(module + ".max_channel")
+	exchangeType := viper.GetString(moduleName + ".exchange.type")
+	exchangeDurable := viper.GetBool(moduleName + ".exchange.durable")
+	exchangeAutoDelete := viper.GetBool(moduleName + ".exchange.autodelete")
+	exchangeInternal := viper.GetBool(moduleName + ".exchange.internal")
+	exchangeNowait := viper.GetBool(moduleName + ".exchange.nowait")
 
-	exchangeType := viper.GetString(module + ".exchange.type")
-	exchangeDurable := viper.GetBool(module + ".exchange.durable")
-	exchangeAutoDelete := viper.GetBool(module + ".exchange.autodelete")
-	exchangeInternal := viper.GetBool(module + ".exchange.internal")
-	exchangeNowait := viper.GetBool(module + ".exchange.nowait")
+	queueDurable := viper.GetBool(moduleName + ".queue.durable")
+	queueAutoDelete := viper.GetBool(moduleName + ".queue.autodelete")
+	queueExclusive := viper.GetBool(moduleName + ".queue.exclusive")
+	queueNowait := viper.GetBool(moduleName + ".queue.nowait")
 
-	queueDurable := viper.GetBool(module + ".queue.durable")
-	queueAutoDelete := viper.GetBool(module + ".queue.autodelete")
-	queueExclusive := viper.GetBool(module + ".queue.exclusive")
-	queueNowait := viper.GetBool(module + ".queue.nowait")
+	bindRoutingKey := viper.GetString(moduleName + ".bind.routing_key")
+	bindNowait := viper.GetBool(moduleName + ".bind.nowait")
 
-	bindRoutingKey := viper.GetString(module + ".bind.routing_key")
-	bindNowait := viper.GetBool(module + ".bind.nowait")
+	consumeAutoAck := viper.GetBool(moduleName + ".consume.auto_ack")
+	consumeExclusive := viper.GetBool(moduleName + ".consume.exclusive")
+	consumeNowait := viper.GetBool(moduleName + ".consume.nowait")
 
-	consumeAutoAck := viper.GetBool(module + ".consume.auto_ack")
-	consumeExclusive := viper.GetBool(module + ".consume.exclusive")
-	consumeNowait := viper.GetBool(module + ".consume.nowait")
+	publishMandatory := viper.GetBool(moduleName + ".publish.mandatory")
+	publishImmediate := viper.GetBool(moduleName + ".publish.immediate")
+	publishConfirme := viper.GetBool(moduleName + ".publish.confirme")
+	publishTimeout := viper.GetDuration(moduleName + ".publish.timeout")
 
-	publishMandatory := viper.GetBool(module + ".publish.mandatory")
-	publishImmediate := viper.GetBool(module + ".publish.immediate")
-	publishConfirme := viper.GetBool(module + ".publish.confirme")
-	publishTimeout := viper.GetDuration(module + ".publish.timeout")
+	ackWorker := viper.GetUint32(moduleName + ".ack.max_worker")
+	ackTimeout := viper.GetDuration(moduleName + ".ack.timeout")
 
-	ackWorker := viper.GetUint32(module + ".ack.max_worker")
-	ackTimeout := viper.GetDuration(module + ".ack.timeout")
-
-	reconnectCount := viper.GetUint(module + ".reconnect.count")
-	reconnectDelay := viper.GetDuration(module + ".reconnect.delay")
-	reconnectMaxJitter := viper.GetDuration(module + ".reconnect.max_jitter")
+	reconnectCount := viper.GetUint(moduleName + ".reconnect.count")
+	reconnectDelay := viper.GetDuration(moduleName + ".reconnect.delay")
+	reconnectMaxJitter := viper.GetDuration(moduleName + ".reconnect.max_jitter")
 
 	return &RabbitMqConfig{
 		Url: url,

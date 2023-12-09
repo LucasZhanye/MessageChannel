@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"os/signal"
+	"regexp"
 	"syscall"
 
 	"messagechannel/internal/pkg/core/config"
@@ -34,7 +35,7 @@ func New(log logger.Log) *Node {
 	clientManager := NewClientManager(log)
 	subscriptionManager := NewSubscriptionManager()
 
-	engine, err := NewEngine(log, subscriptionManager)
+	engine, err := NewEngine(cfg.EngineType, log, subscriptionManager)
 	if err != nil {
 		panic(err)
 	}
@@ -89,7 +90,28 @@ func (n *Node) UnRegister(client *Client) {
 	n.clientManager.Remove(client.Identifie)
 }
 
+func (n *Node) validateTopicName(topic string) bool {
+	rule := n.Config.TopicRule
+	n.Log.Debug("topic rule = %v", rule)
+
+	if rule == "" {
+		return true
+	}
+
+	matched, err := regexp.MatchString(rule, topic)
+	if err != nil {
+		n.Log.Error("ValidateTopicName Error = %v", err)
+		return false
+	}
+
+	return matched
+}
+
 func (n *Node) Subscribe(sub *protocol.Subscription) error {
+	if !n.validateTopicName(sub.Topic) {
+		return errors.New("topic not match rule")
+	}
+
 	client, ok := n.clientManager.Get(sub.Identifie)
 	if !ok {
 		return errors.New("client not register")
@@ -119,10 +141,17 @@ func (n *Node) Subscribe(sub *protocol.Subscription) error {
 }
 
 func (n *Node) Publish(pub *protocol.Publication) error {
+	if !n.validateTopicName(pub.Topic) {
+		return errors.New("topic not match rule")
+	}
 	return n.engine.Publish(pub)
 }
 
 func (n *Node) SyncPublish(pub *protocol.SyncPublication) (*protocol.Message, error) {
+	if !n.validateTopicName(pub.Topic) {
+		return nil, errors.New("topic not match rule")
+	}
+
 	resp, err := n.engine.SyncPublish(pub)
 	if err != nil {
 		return nil, err
@@ -140,6 +169,9 @@ func (n *Node) Ack(req *protocol.AckRequest) error {
 }
 
 func (n *Node) UnSubscribe(unsub *protocol.Unsubscription) error {
+	if !n.validateTopicName(unsub.Topic) {
+		return errors.New("topic not match rule")
+	}
 	return n.engine.UnSubscribe(unsub)
 }
 

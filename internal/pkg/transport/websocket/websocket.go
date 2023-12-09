@@ -1,6 +1,7 @@
 package websocket
 
 import (
+	"net"
 	"sync"
 	"time"
 
@@ -11,8 +12,6 @@ import (
 
 	"github.com/gorilla/websocket"
 )
-
-var moduleName = "transport.websocket"
 
 // WebSocketHandler
 type WebSocketHandler struct {
@@ -25,7 +24,7 @@ var writeBufferPool = &sync.Pool{}
 
 func NewWebSocketHandler(node *core.Node) *WebSocketHandler {
 
-	conf := NewWebSocketConfig(moduleName)
+	conf := NewWebSocketConfig()
 
 	upgrader := websocket.Upgrader{
 		ReadBufferSize:    conf.ReadBufferSize,
@@ -81,8 +80,9 @@ func (h *WebSocketHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		t := NewWebSocketTransport(conn, tConfig, interruptChan)
 
+		host, _, _ := net.SplitHostPort(r.RemoteAddr)
 		info := &core.ClientInfo{
-			Address: r.RemoteAddr,
+			Address: host,
 		}
 		client := core.NewClient(h.node, info, t)
 

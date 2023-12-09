@@ -1,7 +1,5 @@
 package transport
 
-var moduleName = "transport"
-
 // Transport
 type Transport interface {
 	Name() string

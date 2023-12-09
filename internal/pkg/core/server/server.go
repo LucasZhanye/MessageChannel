@@ -2,20 +2,18 @@ package server
 
 import (
 	"messagechannel/internal/pkg/core"
-	"messagechannel/internal/pkg/core/server/grpcserver"
-	"messagechannel/internal/pkg/core/server/httpserver"
 )
 
 type Server struct {
 	node *core.Node
 
-	httpServer *httpserver.HttpServer
-	grpcServer *grpcserver.GRPCServer
+	httpServer *HttpServer
+	grpcServer *GRPCServer
 }
 
 func New(node *core.Node) *Server {
 
-	httpServer := httpserver.New(node)
+	httpServer := NewHttpServer(node)
 
 	return &Server{
 		node:       node,
@@ -23,15 +21,14 @@ func New(node *core.Node) *Server {
 	}
 }
 
-func (s *Server) preConfig() {
-
-	s.httpServer.Initialize()
+func (s *Server) preConfig() error {
+	return s.httpServer.Initialize()
 }
 
 func (s *Server) Run() error {
-	s.preConfig()
-
-	err := s.httpServer.Run()
-
-	return err
+	err := s.preConfig()
+	if err != nil {
+		return err
+	}
+	return s.httpServer.Run()
 }

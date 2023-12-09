@@ -5,8 +5,6 @@ import (
 
 	"messagechannel/pkg/logger"
 	"messagechannel/pkg/protocol"
-
-	"github.com/spf13/viper"
 )
 
 // Engine message engine，support in-memory,rabbitmq,kafka etc.
@@ -33,10 +31,8 @@ type Engine interface {
 	Ack(*protocol.AckRequest) error
 }
 
-func NewEngine(log logger.Log, subscriptionManager *SubscriptionManager) (Engine, error) {
-	eType := viper.GetString("engine.type")
-
-	switch eType {
+func NewEngine(engineType string, log logger.Log, subscriptionManager *SubscriptionManager) (Engine, error) {
+	switch engineType {
 	case "rabbitmq":
 		return NewRabbitMqEngine(log, subscriptionManager)
 	default:
