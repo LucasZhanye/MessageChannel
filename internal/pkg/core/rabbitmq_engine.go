@@ -142,7 +142,7 @@ func (rabbit *RabbitMqEngine) Run() error {
 
 	err = rabbit.init()
 	if err != nil {
-		return errors.New("Can not init rabbitmq engine.")
+		return fmt.Errorf("Can not init rabbitmq engine,err = %w", err)
 	}
 
 	// start ack worker
@@ -205,7 +205,7 @@ func (rabbit *RabbitMqEngine) Publish(publication *protocol.Publication) error {
 
 	msgId := protocol.GenerateMessageId()
 
-	err := rabbit.publishMessage(config.BASE_TOPIC, publication, msgId, nil)
+	err := rabbit.publishMessage(publication, msgId, nil)
 	if err != nil {
 		rabbit.log.Error("client[%s] publish message[id=%s] fail, error = %v", publication.Identifie, msgId, err.Error())
 		return err
@@ -215,7 +215,7 @@ func (rabbit *RabbitMqEngine) Publish(publication *protocol.Publication) error {
 	return nil
 }
 
-func (rabbit *RabbitMqEngine) publishMessage(targetExchange string, publication *protocol.Publication, msgId string, header Header) error {
+func (rabbit *RabbitMqEngine) publishMessage(publication *protocol.Publication, msgId string, header Header) error {
 	channel := rabbit.AcquirePublishChannel()
 	if channel == nil {
 		return errors.New("Rabbitmq Engine can not get channel")
@@ -247,10 +247,15 @@ func (rabbit *RabbitMqEngine) publishMessage(targetExchange string, publication 
 	ctx, cancel := context.WithTimeout(context.Background(), rabbit.config.Publish.Timeout)
 	defer cancel()
 
+	routingKey := "#"
+	if rk, ok := publication.MetaData[config.ROUTINGKEY]; ok {
+		routingKey = rk
+	}
+
 	err := channel.PublishWithContext(
 		ctx,
-		targetExchange,
 		publication.Topic,
+		routingKey,
 		rabbit.config.Publish.Mandatory,
 		rabbit.config.Publish.Immediate,
 		amqp.Publishing{
@@ -288,10 +293,9 @@ func (rabbit *RabbitMqEngine) Subscribe(subscription *protocol.Subscription) err
 		return errors.New("Rabbitmq Engine not connected")
 	}
 
-	routingkey := subscription.Topic
-	exchangeName := subscription.Group
+	exchangeName := subscription.Topic
 	queueName := rabbit.generateQueneName(subscription.Topic, subscription.Group)
-
+	routingkey := "#"
 	err := rabbit.prepareSubscribe(exchangeName, queueName, routingkey)
 	if err != nil {
 		return err
@@ -449,7 +453,7 @@ func (rabbit *RabbitMqEngine) SyncPublish(syncpub *protocol.SyncPublication) (*p
 		return nil, fmt.Errorf("Rabbitmq consume error:%v", err)
 	}
 
-	err = rabbit.publishMessage(config.BASE_TOPIC, publication, msgId, nil)
+	err = rabbit.publishMessage(publication, msgId, nil)
 	if err != nil {
 		rabbit.log.Error("client[%s] syncpublish message[id=%s] fail, error = %v", publication.Identifie, msgId, err.Error())
 		return nil, err
@@ -507,11 +511,14 @@ func (rabbit *RabbitMqEngine) SyncPublishReply(syncPubReply *protocol.SyncPublic
 
 	publication := &protocol.Publication{
 		Identifie: syncPubReply.Identifie,
-		Topic:     syncPubReply.MessageId,
-		Data:      syncPubReply.Data,
+		Topic: config.RESPONSE_EXCHANGE,
+		Data:  syncPubReply.Data,
+		MetaData: map[string]string{
+			config.ROUTINGKEY: syncPubReply.MessageId,
+		},
 	}
 
-	err := rabbit.publishMessage(config.RESPONSE_EXCHANGE, publication, syncPubReply.MessageId, syncPubReply.Header)
+	err := rabbit.publishMessage(publication, syncPubReply.MessageId, syncPubReply.Header)
 	if err != nil {
 		rabbit.log.Error("client[%s] reply message[id=%s] fail, error = %v", publication.Identifie, syncPubReply.MessageId, err.Error())
 		return err
@@ -544,20 +551,6 @@ func (rabbit *RabbitMqEngine) init() error {
 			rabbit.log.Error("rabbitmq channel close error: %v", err)
 		}
 	}()
-
-	// create basic exchange
-	err = channel.ExchangeDeclare(
-		config.BASE_TOPIC,
-		rabbit.config.Exchange.Type,
-		rabbit.config.Exchange.Durable,
-		rabbit.config.Exchange.AutoDelete,
-		rabbit.config.Exchange.Internal,
-		rabbit.config.Exchange.NoWait,
-		nil,
-	)
-	if err != nil {
-		return fmt.Errorf("Rabbitmq declare basic exchange error:%v", err)
-	}
 
 	// create dead letter exchange
 	err = channel.ExchangeDeclare(
@@ -643,18 +636,6 @@ func (rabbit *RabbitMqEngine) prepareSubscribe(exchangeName, queueName, routingk
 		return fmt.Errorf("Rabbitmq declare exchange error:%v", err)
 	}
 
-	// binding exchange
-	err = channel.ExchangeBind(
-		exchangeName,
-		routingkey,
-		config.BASE_TOPIC,
-		rabbit.config.Exchange.NoWait,
-		nil,
-	)
-	if err != nil {
-		return fmt.Errorf("Rabbitmq bind exchange error:%v", err)
-	}
-
 	// create queue
 	queue, err := channel.QueueDeclare(
 		queueName,
@@ -704,7 +685,9 @@ func (rabbit *RabbitMqEngine) handleMessage(message amqp.Delivery, subscription 
 			return
 		}
 
-		rabbit.log.Debug("set to cache: %s", message.MessageId)
+		rabbit.log.Debug("set to cache: %s, %s, %s", message.MessageId, message.RoutingKey, message.Exchange)
+		// set group name to message header
+		message.Headers["group"] = subscription.Group
 		rabbit.ackCache.Add(message.MessageId, rabbit.config.Ack.Timeout, message)
 	} else {
 		// TODO: Maybe should send to error queue
@@ -741,25 +724,29 @@ func (rabbit *RabbitMqEngine) handleAckTimeout(item *cache2go.CacheItem) {
 
 	message := item.Data().(amqp.Delivery)
 
-	// routingkey means topic name, and exchange means group name
-	consumerCount := rabbit.subscriptionManager.GetSubscriptionCount(message.RoutingKey, message.Exchange)
-
+	groupName, ok := message.Headers["group"].(string)
+	if !ok {
+		message.Nack(false, false) // send to dead-letter exchange
+		return
+	}
+	consumerCount := rabbit.subscriptionManager.GetSubscriptionCount(message.Exchange, groupName)
 	if consumerCount > 1 {
-		consumeTimes := int(message.Headers["consume_count"].(float64))
-
+		consumeTimes := int(message.Headers["consume_count"].(int32))
 		// find next consumer
 		if consumeTimes < consumerCount {
 			message.Headers["consume_count"] = consumeTimes + 1
 			// republish
 			publication := &protocol.Publication{
 				Identifie: message.AppId,
-				Topic:     message.RoutingKey,
+				Topic:     message.Exchange,
 				Data:      message.Body,
 			}
-			err := rabbit.publishMessage(config.BASE_TOPIC, publication, message.MessageId, Header(message.Headers))
+			err := rabbit.publishMessage(publication, message.MessageId, Header(message.Headers))
 			if err != nil {
 				rabbit.log.Error("client[%s] transfer message[id=%s] to next client fail, error = %v", publication.Identifie, message.MessageId, err.Error())
 				message.Nack(false, false)
+			} else {
+				message.Ack(false)
 			}
 		} else {
 			message.Nack(false, false)

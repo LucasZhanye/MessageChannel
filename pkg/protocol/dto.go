@@ -9,6 +9,7 @@ type Publication struct {
 	Identifie string
 	Topic     string
 	Data      []byte
+	MetaData  map[string]string
 }
 
 type SyncPublication struct {

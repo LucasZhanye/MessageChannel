@@ -11,11 +11,11 @@ import (
 const moduleName = "engine.rabbitmq"
 
 const (
-	BASE_TOPIC           = "default.basic.topic"
 	DEAD_LETTER_EXCHANGE = "default.deadletter.exchange"
 	DEAD_LETTER_QUEUE    = "default.deadletter.queue"
 	DEAD_LETTER_KEY      = "default.deadletter.key"
 	RESPONSE_EXCHANGE    = "default.response.exchange"
+	ROUTINGKEY           = "routingkey"
 )
 
 type RabbitMqConfig struct {

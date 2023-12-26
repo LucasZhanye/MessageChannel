@@ -132,3 +132,14 @@ func (sm *SubscriptionManager) GetAll() *Topic {
 func (sm *SubscriptionManager) GetTotalSubscriptionCount() int {
 	return int(sm.total.Load())
 }
+
+func (sm *SubscriptionManager) CheckTopicHasSubscriber(topic string) bool {
+	groups, ok := sm.topics.Get(topic)
+	if ok {
+		if groups.Count() > 0 {
+			return true
+		}
+	}
+
+	return false
+}

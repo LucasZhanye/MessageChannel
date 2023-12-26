@@ -92,7 +92,7 @@ func (n *Node) UnRegister(client *Client) {
 
 func (n *Node) validateTopicName(topic string) bool {
 	rule := n.Config.TopicRule
-	n.Log.Debug("topic rule = %v", rule)
+	// n.Log.Debug("topic rule = %v", rule)
 
 	if rule == "" {
 		return true
@@ -150,6 +150,12 @@ func (n *Node) Publish(pub *protocol.Publication) error {
 func (n *Node) SyncPublish(pub *protocol.SyncPublication) (*protocol.Message, error) {
 	if !n.validateTopicName(pub.Topic) {
 		return nil, errors.New("topic not match rule")
+	}
+
+	// Check if the topic has subscribers
+	ret := n.subscriptionManager.CheckTopicHasSubscriber(pub.Topic)
+	if !ret {
+		return nil, errors.New("This topic has no subscribers")
 	}
 
 	resp, err := n.engine.SyncPublish(pub)
